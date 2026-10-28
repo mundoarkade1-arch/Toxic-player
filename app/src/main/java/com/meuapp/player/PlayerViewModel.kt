@@ -2,7 +2,7 @@ package com.meuapp.player
 
 import android.app.Application
 import android.content.ComponentName
-import android.provider.MediaStore
+import android.provider.MediaStore.Audio.Media
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
