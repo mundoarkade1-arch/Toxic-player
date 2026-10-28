@@ -15,8 +15,8 @@ android {
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("APP_VERSION") ?: "1.0.0"
         // >>> TROQUE pelos dados do SEU repositório <<<
-        buildConfigField("String", "GH_OWNER", "\"SEU_USUARIO\"")
-        buildConfigField("String", "GH_REPO", "\"SEU_REPOSITORIO\"")
+        buildConfigField("String", "GH_OWNER", "\"mundoarkade1-arch\"")
+        buildConfigField("String", "GH_REPO", "\"Toxic-player\"")
     }
 
     // Assinatura: lê as 3 senhas das variáveis de ambiente (secrets do GitHub). Nada fixo no código.
