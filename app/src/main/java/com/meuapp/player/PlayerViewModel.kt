@@ -67,17 +67,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun loadTracks() {
         viewModelScope.launch(Dispatchers.IO) {
             val list = mutableListOf<Track>()
-            val media = MediaStore.Audio.Media
-            val proj = arrayOf(media._ID, media.TITLE, media.ARTIST, media.DURATION)
+            val proj = arrayOf(Media._ID, Media.TITLE, Media.ARTIST, Media.DURATION)
             getApplication<Application>().contentResolver.query(
-                media.EXTERNAL_CONTENT_URI, proj,
-                "${media.IS_MUSIC} != 0 AND ${media.DURATION} > 30000", null,
-                "${media.TITLE} COLLATE NOCASE"
+                Media.EXTERNAL_CONTENT_URI, proj,
+                "${Media.IS_MUSIC} != 0 AND ${Media.DURATION} > 30000", null,
+                "${Media.TITLE} COLLATE NOCASE"
             )?.use { c ->
-                val id = c.getColumnIndexOrThrow(media._ID)
-                val t = c.getColumnIndexOrThrow(media.TITLE)
-                val a = c.getColumnIndexOrThrow(media.ARTIST)
-                val d = c.getColumnIndexOrThrow(media.DURATION)
+                val id = c.getColumnIndexOrThrow(Media._ID)
+                val t = c.getColumnIndexOrThrow(Media.TITLE)
+                val a = c.getColumnIndexOrThrow(Media.ARTIST)
+                val d = c.getColumnIndexOrThrow(Media.DURATION)
                 while (c.moveToNext()) {
                     val artistName = c.getString(a)?.takeUnless { it == "<unknown>" } ?: "Artista desconhecido"
                     list += Track(c.getLong(id), c.getString(t) ?: "Sem título", artistName, c.getLong(d))
@@ -105,7 +104,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun next() { controller?.seekToNextMediaItem() }
     fun prev() { controller?.seekToPreviousMediaItem() }
     fun seek(ms: Long) { controller?.seekTo(ms) }
-    fun toggleShuffle() { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled; shuffle = it.shuffleModeEnabled } }
+
+    fun toggleShuffle() {
+        controller?.let {
+            it.shuffleModeEnabled = !it.shuffleModeEnabled
+            shuffle = it.shuffleModeEnabled
+        }
+    }
+
     fun toggleRepeat() {
         controller?.let {
             val on = it.repeatMode == Player.REPEAT_MODE_OFF
@@ -122,9 +128,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             if (info == null) {
                 updateMsg = "Não foi possível verificar (confira GH_OWNER e GH_REPO)"
             } else if (Updater.isNewer(info.tag, BuildConfig.VERSION_NAME)) {
-                update = info; updateMsg = "Nova versão ${info.tag} disponível"
+                update = info
+                updateMsg = "Nova versão ${info.tag} disponível"
             } else {
-                update = null; updateMsg = "Você está na versão mais recente"
+                update = null
+                updateMsg = "Você está na versão mais recente"
             }
         }
     }
@@ -139,10 +147,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 progress = -1f
                 if (!Updater.install(ctx, file)) updateMsg = "Permita instalar apps desconhecidos e toque de novo"
             } catch (e: Exception) {
-                progress = -1f; updateMsg = "Falha no download: ${e.message}"
+                progress = -1f
+                updateMsg = "Falha no download: ${e.message}"
             }
         }
     }
 
-    override fun onCleared() { controller?.release(); super.onCleared() }
+    override fun onCleared() {
+        controller?.release()
+        super.onCleared()
+    }
 }
