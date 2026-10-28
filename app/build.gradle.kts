@@ -9,22 +9,21 @@ android {
 
     defaultConfig {
         applicationId = "com.meuapp.player"
-        minSdk = 26
+        minSdk = 28
         targetSdk = 34
-        // Em release, o GitHub Actions injeta a versão a partir da tag (ex.: v1.2.0)
+        // O GitHub Actions injeta estes dois valores a cada publicação (veja build.yml).
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("APP_VERSION") ?: "1.0.0"
-        // >>> TROQUE pelos dados do SEU repositório <<<
         buildConfigField("String", "GH_OWNER", "\"mundoarkade1-arch\"")
         buildConfigField("String", "GH_REPO", "\"Toxic-player\"")
     }
 
-    // Assinatura: lê as 3 senhas das variáveis de ambiente (secrets do GitHub). Nada fixo no código.
+    // Assinatura: lê as senhas de variáveis de ambiente (secrets do GitHub). Nada fixo no código.
     signingConfigs {
         create("release") {
             val pass = System.getenv("KEYSTORE_PASSWORD")
             if (pass != null) {
-                storeFile = file("release.jks")
+                storeFile = file(System.getenv("KEYSTORE_PATH") ?: "release.jks")
                 storePassword = pass
                 keyAlias = System.getenv("KEY_ALIAS")
                 keyPassword = System.getenv("KEY_PASSWORD")
@@ -33,6 +32,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Build de teste NUNCA se confunde com a versão oficial: outro pacote e outro nome de versão.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
             if (System.getenv("KEYSTORE_PASSWORD") != null) {
@@ -61,4 +65,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.media3:media3-exoplayer:1.3.1")
     implementation("androidx.media3:media3-session:1.3.1")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

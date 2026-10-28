@@ -39,7 +39,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     /** Pasta aberta na biblioteca (null = lista de pastas). */
     var openFolder by mutableStateOf<String?>(null); private set
 
-    var update by mutableStateOf<Updater.Info?>(null); private set
+    var update by mutableStateOf<UpdateInfo?>(null); private set
+    var busy by mutableStateOf(false); private set
     var updateMsg by mutableStateOf(""); private set
     var progress by mutableFloatStateOf(-1f); private set
 
@@ -147,35 +148,46 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun changePitch(v: Float) { pitch = v; controller?.setPlaybackParameters(PlaybackParameters(speed, pitch)) }
 
     // ---------- Atualização automática ----------
-    fun checkUpdate() {
+    /** [force] = true ignora o cache de 10 minutos (botão "Verificar agora"). */
+    fun checkUpdate(force: Boolean = false) {
+        if (busy) return
         viewModelScope.launch {
+            busy = true
             updateMsg = "Verificando atualizações..."
-            val info = Updater.latest()
-            if (info == null) {
-                updateMsg = "Não foi possível verificar (confira GH_OWNER e GH_REPO)"
-            } else if (Updater.isNewer(info.tag, BuildConfig.VERSION_NAME)) {
-                update = info
-                updateMsg = "Nova versão ${info.tag} disponível"
-            } else {
-                update = null
-                updateMsg = "Você está na versão mais recente"
+            when (val r = Updater.check(getApplication<Application>(), force)) {
+                is Updater.Check.Available -> { update = r.info; updateMsg = "Nova versão ${r.info.versionName} disponível" }
+                is Updater.Check.UpToDate -> { update = null; updateMsg = "Você está na versão mais recente (${r.latestName})" }
+                is Updater.Check.Failed -> updateMsg = r.message
             }
+            busy = false
         }
     }
 
     fun installUpdate() {
         val info = update ?: return
+        if (busy) return
         viewModelScope.launch {
+            busy = true
             try {
                 val ctx = getApplication<Application>()
                 progress = 0f
-                val file = Updater.download(ctx, info.url) { progress = it }
+                updateMsg = "Baixando ${info.versionName}..."
+                val file = Updater.download(ctx, info) { progress = it }
                 progress = -1f
-                if (!Updater.install(ctx, file)) updateMsg = "Permita instalar apps desconhecidos e toque de novo"
+                val problem = Updater.verifyApk(ctx, file, info)
+                if (problem != null) {
+                    file.delete()
+                    updateMsg = problem
+                } else if (Updater.install(ctx, file)) {
+                    updateMsg = "Confirme a instalação na tela do Android"
+                } else {
+                    updateMsg = "Permita instalar apps desconhecidos e toque de novo"
+                }
             } catch (e: Exception) {
                 progress = -1f
                 updateMsg = "Falha no download: ${e.message}"
             }
+            busy = false
         }
     }
 

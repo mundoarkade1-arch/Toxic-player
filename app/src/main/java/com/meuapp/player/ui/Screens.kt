@@ -518,13 +518,17 @@ fun UpdateScreen(vm: PlayerViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
         ) {
             Text("TOXIC PLAYER", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
-            Text("Versão ${BuildConfig.VERSION_NAME}", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
-            Text(vm.updateMsg, color = Neon.Dim, textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 20.dp))
+            Text("Versão ${BuildConfig.VERSION_NAME}", fontSize = 28.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+            Text("Código instalado: ${BuildConfig.VERSION_CODE}", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.padding(bottom = 12.dp))
+            Text(vm.updateMsg, color = Neon.Dim, textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 8.dp))
+            vm.update?.let {
+                Text("Disponível: ${it.versionName} (código ${it.versionCode})", color = Neon.Green, fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp))
+            }
             if (vm.progress >= 0f) {
                 LinearProgressIndicator(progress = { vm.progress }, color = Neon.Green, modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp))
             }
-            if (vm.update != null) PrimaryButton("Baixar e instalar ${vm.update?.tag}") { vm.installUpdate() }
-            else PrimaryButton("Verificar agora") { vm.checkUpdate() }
+            if (vm.update != null) PrimaryButton(if (vm.busy) "Aguarde..." else "Baixar e instalar") { vm.installUpdate() }
+            else PrimaryButton(if (vm.busy) "Verificando..." else "Verificar agora") { vm.checkUpdate(true) }
         }
     }
 }

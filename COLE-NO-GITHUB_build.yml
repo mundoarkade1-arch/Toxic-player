@@ -1,0 +1,133 @@
+name: Compilar APK
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Nunca duas publicações ao mesmo tempo (evita conflito de versão/tag)
+concurrency:
+  group: release-toxic-player
+  cancel-in-progress: false
+
+env:
+  BASE_VERSION: "1.2"          # troque aqui para subir versão maior (1.3, 2.0...)
+  VERSION_CODE_OFFSET: "100"   # versionCode = 100 + número da execução (sempre crescente)
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Conferir secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          for v in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Secret $v não cadastrado. Sem ele não existe APK oficial assinado."
+              exit 1
+            fi
+          done
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+
+      - name: Definir versão e conferir que é nova
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CODE=$((VERSION_CODE_OFFSET + GITHUB_RUN_NUMBER))
+          VER="${BASE_VERSION}.${GITHUB_RUN_NUMBER}"
+          TAG="v${VER}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::A tag ${TAG} já existe."; exit 1
+          fi
+          LATEST_CODE=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '[.assets[].name | capture("-c(?<c>[0-9]+)\\.apk$") | .c | tonumber] | max // 0' 2>/dev/null || echo 0)
+          echo "versionCode novo: $CODE | último publicado: $LATEST_CODE"
+          if [ "$CODE" -le "$LATEST_CODE" ]; then
+            echo "::error::versionCode $CODE não é maior que o último publicado ($LATEST_CODE)."; exit 1
+          fi
+          {
+            echo "VERSION_CODE=$CODE"
+            echo "APP_VERSION=$VER"
+            echo "TAG=$TAG"
+          } >> "$GITHUB_ENV"
+
+      - name: Restaurar keystore (fora do repositório)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          test -s "$RUNNER_TEMP/release.jks" || { echo "::error::KEYSTORE_BASE64 inválido"; exit 1; }
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Testes unitários
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Compilar APK assinado
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Validar APK (assinatura, versão e pacote)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          test -f "$APK" || { echo "::error::APK de release não foi gerado"; exit 1; }
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > "$RUNNER_TEMP/sig.txt" \
+            || { echo "::error::apksigner reprovou a assinatura"; cat "$RUNNER_TEMP/sig.txt"; exit 1; }
+          APK_SHA=$(grep -m1 "certificate SHA-256 digest" "$RUNNER_TEMP/sig.txt" | sed 's/.*: *//' | tr -d ':' | tr 'A-F' 'a-f')
+          KS_SHA=$(keytool -list -v -keystore "$KEYSTORE_PATH" -alias "$KEY_ALIAS" -storepass "$KEYSTORE_PASSWORD" 2>/dev/null \
+                   | grep -m1 "SHA256:" | sed 's/.*SHA256: *//' | tr -d ':' | tr 'A-F' 'a-f')
+          if [ -z "$APK_SHA" ] || [ "$APK_SHA" != "$KS_SHA" ]; then
+            echo "::error::O APK não foi assinado com a chave dos secrets (APK=$APK_SHA, chave=$KS_SHA)"; exit 1
+          fi
+
+          BADGING=$("$BT/aapt2" dump badging "$APK" | head -1)
+          echo "$BADGING" | grep -q "name='com.meuapp.player'" || { echo "::error::pacote inesperado"; exit 1; }
+          echo "$BADGING" | grep -q "versionCode='$VERSION_CODE'" || { echo "::error::versionCode do APK difere do esperado"; exit 1; }
+          echo "$BADGING" | grep -q "versionName='$APP_VERSION'" || { echo "::error::versionName do APK difere do esperado"; exit 1; }
+
+          OUT="ToxicPlayer-v${APP_VERSION}-c${VERSION_CODE}.apk"
+          cp "$APK" "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "OUT=$OUT" >> "$GITHUB_ENV"
+          echo "APK validado: $OUT"
+
+      - name: Publicar Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" "$OUT" "$OUT.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "Toxic Player $APP_VERSION" \
+            --notes "Versão $APP_VERSION (código $VERSION_CODE). Commit ${GITHUB_SHA::7}: $(git log -1 --pretty=%s)" \
+            --latest
+
+      - name: Apagar keystore temporária
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
