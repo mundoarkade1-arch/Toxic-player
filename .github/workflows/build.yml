@@ -64,7 +64,7 @@ jobs:
       - name: Publicar novo Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: build-${{ github.run_number }}
+          TAG: v1.0.${{ github.run_number }}
         run: |
           gh release create "$TAG" \
             app/build/outputs/apk/release/*.apk \
