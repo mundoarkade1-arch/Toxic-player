@@ -19,6 +19,13 @@ import com.meuapp.player.ui.App
 import com.meuapp.player.ui.AppTheme
 
 class MainActivity : ComponentActivity() {
+    private var vmRef: PlayerViewModel? = null
+
+    override fun onStop() {
+        vmRef?.savePos()   // guarda faixa e ponto atual para continuar depois
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val audioPerm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
@@ -27,6 +34,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             AppTheme {
                 val vm: PlayerViewModel = viewModel()
+                vmRef = vm
                 var granted by remember {
                     mutableStateOf(ContextCompat.checkSelfPermission(this, audioPerm) == PackageManager.PERMISSION_GRANTED)
                 }

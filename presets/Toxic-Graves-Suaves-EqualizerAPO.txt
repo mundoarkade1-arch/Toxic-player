@@ -1,0 +1,8 @@
+# Toxic Player - Graves Suaves (graves presentes, redondos e sem aspereza)
+Preamp: -3.0 dB
+Filter 1: ON HPQ Fc 22 Hz Q 0.707
+Filter 2: ON LSC Fc 90 Hz Gain 4.5 dB Q 0.65
+Filter 3: ON PK Fc 48 Hz Gain 2.0 dB Q 1.1
+Filter 4: ON PK Fc 250 Hz Gain -1.8 dB Q 1.2
+Filter 5: ON PK Fc 3500 Hz Gain 1.2 dB Q 0.9
+Filter 6: ON HSC Fc 9000 Hz Gain 1.5 dB Q 0.7

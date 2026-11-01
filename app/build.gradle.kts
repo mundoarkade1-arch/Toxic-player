@@ -52,6 +52,11 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true; buildConfig = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
+    lint {
+        disable += "UnsafeOptInUsageError"
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 dependencies {

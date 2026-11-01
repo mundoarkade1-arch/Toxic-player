@@ -8,6 +8,16 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.KeyboardType
+import android.graphics.Bitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.meuapp.player.CoverLoader
+import com.meuapp.player.Track
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -32,18 +42,30 @@ import com.meuapp.player.ALL_FOLDERS
 import com.meuapp.player.BuildConfig
 import com.meuapp.player.PlayerViewModel
 import com.meuapp.player.audio.AudioFx
+import com.meuapp.player.audio.DspCore
+import com.meuapp.player.audio.DspEngine
+import com.meuapp.player.audio.EqFilter
+import com.meuapp.player.audio.FilterType
+import com.meuapp.player.audio.Meters
+import kotlinx.coroutines.delay
+import kotlin.math.log10
+import kotlin.math.max
+import kotlin.math.pow
 
 // ───────────── Estrutura principal + navegação ─────────────
 @Composable
 fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
     var tab by remember { mutableIntStateOf(1) }
+    val bg by rememberCover(vm.currentTrack, 48)
+    val target = bg?.let { lerp(Neon.Glow, Color(CoverLoader.averageColor(it)), 0.5f) } ?: Neon.Glow
+    val glowColor by animateColorAsState(target, tween(700), label = "glow")
     Scaffold(
         containerColor = Neon.Bg,
         bottomBar = { NavBar(tab, vm.update != null) { tab = it } }
     ) { pad ->
         Box(
             Modifier.padding(pad).fillMaxSize().clipToBounds()
-                .background(Brush.verticalGradient(listOf(Neon.Glow, Neon.Bg), endY = 1300f))
+                .background(Brush.verticalGradient(listOf(glowColor, Neon.Bg), endY = 1300f))
         ) {
             when (tab) {
                 0 -> LibraryScreen(vm, granted, askPerm) { tab = 1 }
@@ -91,7 +113,19 @@ private fun neonSlider() = SliderDefaults.colors(
     thumbColor = Neon.Green, activeTrackColor = Neon.Green, inactiveTrackColor = Color.White.copy(alpha = 0.14f)
 )
 
+@Composable
+private fun neonSwitch() = SwitchDefaults.colors(checkedTrackColor = Neon.Green, checkedThumbColor = Neon.OnGreen)
+
+@Composable
+fun rememberCover(track: Track?, size: Int): State<Bitmap?> {
+    val ctx = LocalContext.current.applicationContext
+    return produceState<Bitmap?>(null, track?.id, size) {
+        value = if (track == null) null else withContext(Dispatchers.IO) { CoverLoader.load(ctx, track, size) }
+    }
+}
+
 private fun fmt(ms: Long) = "%d:%02d".format(ms / 60000, (ms / 1000) % 60)
+private fun toDb(v: Float) = 20f * log10(max(v, 1e-6f))
 
 @Composable
 private fun PrimaryButton(text: String, onClick: () -> Unit) = Button(
@@ -99,6 +133,11 @@ private fun PrimaryButton(text: String, onClick: () -> Unit) = Button(
     colors = ButtonDefaults.buttonColors(containerColor = Neon.Green, contentColor = Neon.OnGreen),
     modifier = Modifier.fillMaxWidth().height(52.dp)
 ) { Text(text, fontWeight = FontWeight.Bold) }
+
+@Composable
+private fun GhostButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) = OutlinedButton(
+    onClick = onClick, shape = CircleShape, border = BorderStroke(1.dp, Neon.Green), modifier = modifier.height(46.dp)
+) { Text(text, color = Neon.Green, fontSize = 13.sp, maxLines = 1) }
 
 @Composable
 private fun Chip(text: String, selected: Boolean = false, onClick: () -> Unit) =
@@ -110,6 +149,9 @@ private fun Chip(text: String, selected: Boolean = false, onClick: () -> Unit) =
             .clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 9.dp),
         fontSize = 13.sp, color = if (selected) Neon.Green else Color.White
     )
+
+@Composable
+private fun Title(text: String) = Text(text, fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
 
 // ───────────── Player ─────────────
 @Composable
@@ -123,12 +165,13 @@ fun PlayerScreen(vm: PlayerViewModel) {
             verticalArrangement = Arrangement.SpaceEvenly
         ) {
             Text("TOXIC PLAYER", color = Neon.Green, fontSize = 12.sp, letterSpacing = 4.sp, fontWeight = FontWeight.Bold)
-            Vinyl(vm.isPlaying)
+            CoverStage(vm.currentTrack, vm.isPlaying)
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(vm.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(vm.artist, fontSize = 14.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                vm.playError?.let { Text(it, fontSize = 12.sp, color = Color(0xFFFF6B6B)) }
             }
-            Spectrum(vm.isPlaying)
+            LiveSpectrum(vm.isPlaying)
             Column {
                 Slider(
                     value = if (vm.duration > 0) (vm.position.toFloat() / vm.duration).coerceIn(0f, 1f) else 0f,
@@ -157,13 +200,48 @@ fun PlayerScreen(vm: PlayerViewModel) {
     }
 }
 
+/** Capa do álbum em destaque, com um disco de vinil girando atrás e brilho na cor da capa. */
+@Composable
+private fun CoverStage(track: Track?, playing: Boolean) {
+    val cover by rememberCover(track, 600)
+    val tint = cover?.let { Color(CoverLoader.averageColor(it)) } ?: Neon.Green
+    val rot = remember { Animatable(0f) }
+    LaunchedEffect(playing) {
+        if (playing) while (true) rot.animateTo(rot.value + 360f, tween(9000, easing = LinearEasing))
+    }
+    Box(Modifier.fillMaxWidth().height(250.dp)) {
+        Canvas(Modifier.size(215.dp).align(Alignment.CenterEnd).rotate(rot.value % 360f)) {
+            val r = size.minDimension / 2
+            drawCircle(Brush.radialGradient(listOf(Color(0xFF101612), Color(0xFF070A08))), r)
+            for (i in 1..14) drawCircle(Color.White.copy(alpha = 0.05f), r * (0.3f + i * 0.045f), style = Stroke(1f))
+            drawCircle(Neon.Green, r * 0.26f)
+            drawCircle(Neon.Bg, r * 0.05f)
+            drawCircle(Neon.Green.copy(alpha = 0.5f), r - 1.dp.toPx(), style = Stroke(2.dp.toPx()))
+        }
+        Box(
+            Modifier.size(245.dp).align(Alignment.CenterStart)
+                .drawBehind { drawCircle(tint.copy(alpha = 0.35f), size.minDimension * 0.72f) }
+                .clip(RoundedCornerShape(28.dp)).background(Color(0xFF0B0F0D))
+                .border(1.dp, Neon.Border, RoundedCornerShape(28.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            val b = cover
+            if (b != null) {
+                Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else {
+                Icon(Icons.Rounded.MusicNote, null, tint = Neon.Green.copy(alpha = 0.5f), modifier = Modifier.size(96.dp))
+            }
+        }
+    }
+}
+
 @Composable
 private fun Vinyl(playing: Boolean) {
     val rot = remember { Animatable(0f) }
     LaunchedEffect(playing) {
         if (playing) while (true) rot.animateTo(rot.value + 360f, tween(9000, easing = LinearEasing))
     }
-    Box(Modifier.size(250.dp).drawBehind { drawCircle(Neon.Green.copy(alpha = 0.16f), size.minDimension * 0.62f) }) {
+    Box(Modifier.size(230.dp).drawBehind { drawCircle(Neon.Green.copy(alpha = 0.16f), size.minDimension * 0.62f) }) {
         Canvas(Modifier.fillMaxSize().rotate(rot.value % 360f)) {
             val r = size.minDimension / 2
             drawCircle(Brush.radialGradient(listOf(Color(0xFF101612), Color(0xFF070A08))), r)
@@ -175,26 +253,29 @@ private fun Vinyl(playing: Boolean) {
     }
 }
 
-/** Barras decorativas animadas (não leem o áudio real). */
+/** Espectro REAL (FFT do áudio que sai do motor de DSP). */
 @Composable
-private fun Spectrum(active: Boolean) {
-    val t = rememberInfiniteTransition(label = "sp")
-    Row(Modifier.fillMaxWidth().height(52.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
-        repeat(20) { i ->
-            val h by t.animateFloat(
-                initialValue = 0.15f, targetValue = 1f,
-                animationSpec = infiniteRepeatable(tween(400 + (i * 53) % 500, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-                label = "b$i"
-            )
+private fun LiveSpectrum(active: Boolean) {
+    var bars by remember { mutableStateOf(FloatArray(24)) }
+    LaunchedEffect(active) {
+        while (true) {
+            val raw = if (active) DspEngine.core.spectrum(24) else FloatArray(24)
+            val old = bars
+            bars = FloatArray(24) { max(raw[it], old[it] * 0.8f) }
+            delay(50)
+        }
+    }
+    Row(Modifier.fillMaxWidth().height(52.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
+        for (i in 0 until 24) {
             Box(
-                Modifier.weight(1f).fillMaxHeight(if (active) h else 0.12f).clip(CircleShape)
+                Modifier.weight(1f).fillMaxHeight(0.04f + bars[i] * 0.96f).clip(CircleShape)
                     .background(Brush.verticalGradient(listOf(Neon.Green, Neon.Green.copy(alpha = 0.15f))))
             )
         }
     }
 }
 
-// ───────────── Biblioteca (por pastas) ─────────────
+// ───────────── Biblioteca ─────────────
 @Composable
 fun LibraryScreen(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit, goPlayer: () -> Unit) {
     val open = vm.openFolder
@@ -206,31 +287,53 @@ fun LibraryScreen(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit, go
                 Text("BIBLIOTECA", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
                 Spacer(Modifier.height(14.dp))
                 PermissionCard("Permita o acesso às músicas do celular.", "Permitir", askPerm)
-            } else if (open == null) {
-                FolderList(vm)
+            } else if (open != null) {
+                TrackList(vm, vm.tracksIn(open), groupTitle(vm, open), true, goPlayer)
             } else {
-                TrackList(vm, open, goPlayer)
+                LibraryRoot(vm, goPlayer)
             }
         }
     }
 }
 
+private fun groupTitle(vm: PlayerViewModel, key: String): String =
+    if (key == ALL_FOLDERS) "Todas as músicas" else vm.groups(0).plus(vm.groups(1)).plus(vm.groups(2)).firstOrNull { it.path == key }?.name ?: "Grupo"
+
 @Composable
-private fun FolderList(vm: PlayerViewModel) {
+private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
     Text("BIBLIOTECA", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
-    Text("${vm.folders.size} pastas · ${vm.tracks.size} músicas", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 14.dp))
+    Text("${vm.tracks.size} músicas", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp))
+    OutlinedTextField(
+        value = vm.query, onValueChange = vm::changeQuery, singleLine = true,
+        label = { Text("Buscar música, artista, álbum ou pasta") },
+        leadingIcon = { Icon(Icons.Rounded.Search, null) },
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(Modifier.height(10.dp))
+    if (vm.query.isNotBlank()) {
+        TrackList(vm, vm.searchResults(), "Resultados", false, goPlayer)
+        return
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Chip("Pastas", vm.libMode == 0) { vm.changeLibMode(0) }
+        Chip("Artistas", vm.libMode == 1) { vm.changeLibMode(1) }
+        Chip("Álbuns", vm.libMode == 2) { vm.changeLibMode(2) }
+    }
+    Spacer(Modifier.height(10.dp))
     if (vm.tracks.isEmpty()) {
         Text("Nenhuma música encontrada no aparelho.", color = Neon.Dim)
         return
     }
+    val groups = remember(vm.tracks, vm.libMode) { vm.groups(vm.libMode) }
+    val icon = when (vm.libMode) { 1 -> Icons.Rounded.Person; 2 -> Icons.Rounded.Album; else -> Icons.Rounded.Folder }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { FolderRow("Todas as músicas", vm.tracks.size, Icons.Rounded.LibraryMusic) { vm.enterFolder(ALL_FOLDERS) } }
-        items(vm.folders) { f -> FolderRow(f.name, f.count, Icons.Rounded.Folder) { vm.enterFolder(f.path) } }
+        item { GroupRow("Todas as músicas", vm.tracks.size, Icons.Rounded.LibraryMusic) { vm.enterFolder(ALL_FOLDERS) } }
+        items(groups) { g -> GroupRow(g.name, g.count, icon) { vm.enterFolder(g.path) } }
     }
 }
 
 @Composable
-private fun FolderRow(name: String, count: Int, icon: ImageVector, onClick: () -> Unit) {
+private fun GroupRow(name: String, count: Int, icon: ImageVector, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().glass(18.dp).clickable(onClick = onClick).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, tint = Neon.Green, modifier = Modifier.size(28.dp))
         Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
@@ -242,18 +345,22 @@ private fun FolderRow(name: String, count: Int, icon: ImageVector, onClick: () -
 }
 
 @Composable
-private fun TrackList(vm: PlayerViewModel, path: String, goPlayer: () -> Unit) {
-    val list = vm.tracksIn(path)
-    val name = if (path == ALL_FOLDERS) "Todas as músicas" else vm.folders.firstOrNull { it.path == path }?.name ?: "Pasta"
+private fun TrackList(vm: PlayerViewModel, list: List<com.meuapp.player.Track>, name: String, showBack: Boolean, goPlayer: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { vm.enterFolder(null) }) { Icon(Icons.Rounded.ArrowBack, "Voltar", tint = Neon.Green) }
+        if (showBack) IconButton(onClick = { vm.enterFolder(null) }) { Icon(Icons.Rounded.ArrowBack, "Voltar", tint = Neon.Green) }
         Column(Modifier.weight(1f)) {
-            Text(name, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(name, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${list.size} músicas", fontSize = 12.sp, color = Neon.Dim)
         }
     }
-    Spacer(Modifier.height(10.dp))
-    PrimaryButton("Tocar toda a pasta") { vm.playList(list, 0); goPlayer() }
+    Spacer(Modifier.height(8.dp))
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Chip("Título", vm.sortMode == 0) { vm.changeSort(0) }
+        Chip("Artista", vm.sortMode == 1) { vm.changeSort(1) }
+        Chip("Duração", vm.sortMode == 2) { vm.changeSort(2) }
+    }
+    Spacer(Modifier.height(8.dp))
+    if (list.isNotEmpty()) PrimaryButton("Tocar tudo") { vm.playList(list, 0); goPlayer() }
     Spacer(Modifier.height(10.dp))
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(list.size) { i ->
@@ -263,7 +370,12 @@ private fun TrackList(vm: PlayerViewModel, path: String, goPlayer: () -> Unit) {
                 Modifier.fillMaxWidth().glass(18.dp).clickable { vm.playList(list, i); goPlayer() }.padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Rounded.MusicNote, null, tint = if (now) Neon.Green else Neon.Dim)
+                val thumb by rememberCover(t, 128)
+                Box(Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(Neon.Glass), contentAlignment = Alignment.Center) {
+                    val tb = thumb
+                    if (tb != null) Image(tb.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    else Icon(Icons.Rounded.MusicNote, null, tint = if (now) Neon.Green else Neon.Dim)
+                }
                 Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                     Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (now) Neon.Green else Color.White)
                     Text(t.artist, fontSize = 12.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -282,7 +394,7 @@ private fun PermissionCard(text: String, button: String, onClick: () -> Unit) {
     }
 }
 
-// ───────────── Mesa de áudio (avançada) ─────────────
+// ───────────── Mesa de áudio ─────────────
 @Composable
 fun MesaScreen(vm: PlayerViewModel) {
     var sec by remember { mutableIntStateOf(0) }
@@ -295,14 +407,9 @@ fun MesaScreen(vm: PlayerViewModel) {
                     Text("MESA DE ÁUDIO", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
                     Text("Toxic Sound", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 }
-                Switch(
-                    checked = AudioFx.enabled, onCheckedChange = { AudioFx.enabled = it; AudioFx.apply() },
-                    colors = SwitchDefaults.colors(checkedTrackColor = Neon.Green, checkedThumbColor = Neon.OnGreen)
-                )
+                Switch(checked = AudioFx.enabled, onCheckedChange = { AudioFx.enabled = it; AudioFx.apply() }, colors = neonSwitch())
             }
-            if (!AudioFx.ready) {
-                Text("Toque uma música para ativar os efeitos.", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
-            }
+            if (!AudioFx.ready) Text("Toque uma música para ativar os efeitos do sistema.", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth().glass(24.dp).padding(4.dp)) {
                 names.forEachIndexed { i, n ->
@@ -319,6 +426,7 @@ fun MesaScreen(vm: PlayerViewModel) {
             }
             Spacer(Modifier.height(12.dp))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                MetersCard()
                 when (sec) {
                     0 -> EqSection()
                     1 -> DynSection()
@@ -330,7 +438,63 @@ fun MesaScreen(vm: PlayerViewModel) {
     }
 }
 
-private fun freqLabel(f: Int) = if (f >= 1000) "${f / 1000}k" else "$f"
+@Composable
+private fun LevelBar(frac: Float, hot: Boolean) {
+    Box(Modifier.fillMaxWidth().height(8.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.12f))) {
+        Box(Modifier.fillMaxWidth(frac.coerceIn(0f, 1f)).fillMaxHeight().background(if (hot) Color(0xFFFF4D4D) else Neon.Green))
+    }
+}
+
+/** Medidores reais de pico, RMS, redução de ganho, headroom e clipping. */
+@Composable
+private fun MetersCard() {
+    var m by remember { mutableStateOf(Meters()) }
+    var shownL by remember { mutableFloatStateOf(0f) }
+    var shownR by remember { mutableFloatStateOf(0f) }
+    var clipUntil by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val cur = DspEngine.core.meters
+            m = cur
+            shownL = max(cur.peakL, shownL * 0.85f)
+            shownR = max(cur.peakR, shownR * 0.85f)
+            if (cur.clip) clipUntil = System.currentTimeMillis() + 1500
+            delay(60)
+        }
+    }
+    val clipping = System.currentTimeMillis() < clipUntil
+    val pL = toDb(shownL); val pR = toDb(shownR)
+    val headroom = -max(pL, pR)
+    Column(Modifier.fillMaxWidth().glass().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Title("MEDIDORES")
+            Text(if (clipping) "CLIPPING!" else "Headroom ${"%.1f".format(headroom.coerceAtMost(60f))} dB", fontSize = 12.sp, color = if (clipping) Color(0xFFFF4D4D) else Neon.Green)
+        }
+        LevelBar((pL + 60f) / 60f, pL > -1f)
+        LevelBar((pR + 60f) / 60f, pR > -1f)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("RMS L ${"%.0f".format(toDb(m.rmsL))} · R ${"%.0f".format(toDb(m.rmsR))} dB", fontSize = 11.sp, color = Neon.Dim)
+            Text("Comp -${"%.1f".format(m.compGrDb)} · Lim -${"%.1f".format(m.limGrDb)} dB", fontSize = 11.sp, color = Neon.Dim)
+        }
+    }
+}
+
+// ---- EQ ----
+@Composable
+private fun EqCurve() {
+    Canvas(Modifier.fillMaxWidth().height(80.dp)) {
+        val pts = 100
+        val curve = AudioFx.responseCurve(pts)
+        fun y(db: Float) = size.height * (1f - ((db.coerceIn(-18f, 18f)) + 18f) / 36f)
+        drawLine(Color.White.copy(alpha = 0.18f), Offset(0f, y(0f)), Offset(size.width, y(0f)), 1.dp.toPx())
+        val path = Path()
+        for (i in 0 until pts) {
+            val x = size.width * i / (pts - 1)
+            if (i == 0) path.moveTo(x, y(curve[i])) else path.lineTo(x, y(curve[i]))
+        }
+        drawPath(path, Neon.Green, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
 
 /** Slider vertical (um slider normal girado). */
 @Composable
@@ -340,9 +504,7 @@ private fun VSlider(value: Float, range: ClosedFloatingPointRange<Float>, modifi
         modifier = modifier
             .layout { measurable, c ->
                 val p = measurable.measure(
-                    androidx.compose.ui.unit.Constraints(
-                        minWidth = c.minHeight, maxWidth = c.maxHeight, minHeight = c.minWidth, maxHeight = c.maxWidth
-                    )
+                    Constraints(minWidth = c.minHeight, maxWidth = c.maxHeight, minHeight = c.minWidth, maxHeight = c.maxWidth)
                 )
                 layout(p.height, p.width) { p.place(-p.width / 2 + p.height / 2, p.width / 2 - p.height / 2) }
             }
@@ -350,160 +512,252 @@ private fun VSlider(value: Float, range: ClosedFloatingPointRange<Float>, modifi
     )
 }
 
-@Composable
-private fun EqCurve() {
-    Canvas(Modifier.fillMaxWidth().height(70.dp)) {
-        val n = AudioFx.bands.size
-        if (n < 2) return@Canvas
-        fun y(v: Float) = size.height * (1f - (v + 12f) / 24f)
-        drawLine(Color.White.copy(alpha = 0.18f), Offset(0f, y(0f)), Offset(size.width, y(0f)), 1.dp.toPx())
-        val path = Path()
-        for (i in 0 until n) {
-            val x = size.width * i / (n - 1)
-            if (i == 0) path.moveTo(x, y(AudioFx.bands[i])) else path.lineTo(x, y(AudioFx.bands[i]))
-        }
-        drawPath(path, Neon.Green, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-    }
-}
+private fun freqLabel(f: Int) = if (f >= 1000) "${f / 1000}k" else "$f"
 
 @Composable
 private fun EqSection() {
+    var param by remember { mutableStateOf(false) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Chip("Gráfico · 10 bandas", !param) { param = false }
+        Chip("Paramétrico", param) { param = true }
+    }
     Column(Modifier.fillMaxWidth().glass().padding(14.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("EQUALIZADOR · 10 BANDAS", fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
-            Switch(
-                checked = AudioFx.eqOn, onCheckedChange = { AudioFx.eqOn = it; AudioFx.apply() },
-                colors = SwitchDefaults.colors(checkedTrackColor = Neon.Green, checkedThumbColor = Neon.OnGreen)
-            )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Title("RESPOSTA COMBINADA")
+            Text("±18 dB", fontSize = 11.sp, color = Neon.Dim)
         }
         EqCurve()
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-            for (i in 0 until AudioFx.bands.size) {
-                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("%+.0f".format(AudioFx.bands[i]), fontSize = 9.sp, color = Neon.Green)
-                    VSlider(AudioFx.bands[i], -12f..12f, Modifier.height(170.dp).fillMaxWidth()) {
-                        AudioFx.bands[i] = it; AudioFx.apply()
+    }
+    if (!param) {
+        Column(Modifier.fillMaxWidth().glass().padding(14.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Title("EQ GRÁFICO")
+                Switch(checked = AudioFx.eqOn, onCheckedChange = { AudioFx.eqOn = it; AudioFx.apply() }, colors = neonSwitch())
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                for (i in 0 until AudioFx.bands.size) {
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("%+.0f".format(AudioFx.bands[i]), fontSize = 9.sp, color = Neon.Green)
+                        VSlider(AudioFx.bands[i], -12f..12f, Modifier.height(170.dp).fillMaxWidth()) { AudioFx.bands[i] = it; AudioFx.apply() }
+                        Text(freqLabel(AudioFx.EQ_FREQS[i]), fontSize = 9.sp, color = Neon.Dim)
                     }
-                    Text(freqLabel(AudioFx.EQ_FREQS[i]), fontSize = 9.sp, color = Neon.Dim)
                 }
             }
         }
+        GhostButton("Zerar equalizador gráfico", Modifier.fillMaxWidth()) { AudioFx.applyPreset("Flat") }
+    } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Title("FILTROS (${AudioFx.filters.size}/${DspCore.MAX_PARAM})")
+            Switch(checked = AudioFx.paramOn, onCheckedChange = { AudioFx.paramOn = it; AudioFx.apply() }, colors = neonSwitch())
+        }
+        AudioFx.filters.toList().forEachIndexed { i, f -> FilterCard(i, f) }
+        if (AudioFx.filters.size < DspCore.MAX_PARAM) PrimaryButton("Adicionar filtro") { AudioFx.addFilter() }
     }
-    OutlinedButton(
-        onClick = { AudioFx.applyPreset("Flat") }, shape = CircleShape,
-        border = BorderStroke(1.dp, Neon.Green), modifier = Modifier.fillMaxWidth().height(48.dp)
-    ) { Text("Zerar equalizador", color = Neon.Green) }
 }
 
 @Composable
-private fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String, decimals: Int = 0, onChange: (Float) -> Unit) {
-    Column {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, fontSize = 12.sp, color = Neon.Dim)
-            Text(String.format("%.${decimals}f", value) + " " + unit, fontSize = 12.sp, color = Neon.Green)
+private fun FilterCard(i: Int, f: EqFilter) {
+    Column(Modifier.fillMaxWidth().glass().padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Filtro ${i + 1}", fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = f.enabled, onCheckedChange = { AudioFx.updateFilter(i, f.copy(enabled = it)) }, colors = neonSwitch())
+                Text("Remover", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.clickable { AudioFx.removeFilter(i) }.padding(10.dp))
+            }
         }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterType.values().forEach { t -> Chip(t.label, f.type == t) { AudioFx.updateFilter(i, f.copy(type = t)) } }
+        }
+        val lo = log10(20f); val hi = log10(20000f)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Frequência", fontSize = 12.sp, color = Neon.Dim)
+            Text(if (f.freq >= 1000) "%.2f kHz".format(f.freq / 1000f) else "%.0f Hz".format(f.freq), fontSize = 12.sp, color = Neon.Green)
+        }
+        Slider(
+            value = log10(f.freq).coerceIn(lo, hi), onValueChange = { AudioFx.updateFilter(i, f.copy(freq = 10f.pow(it))) },
+            valueRange = lo..hi, colors = neonSlider()
+        )
+        if (f.type.usesGain) {
+            SliderRow("Ganho", f.gainDb, -18f..18f, "dB", 1) { AudioFx.updateFilter(i, f.copy(gainDb = it)) }
+        }
+        SliderRow("Q (largura)", f.q, 0.2f..10f, "", 2, hint = "Baixo = faixa larga e suave; alto = estreita") { AudioFx.updateFilter(i, f.copy(q = it)) }
+    }
+}
+
+@Composable
+private fun SliderRow(
+    label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
+    decimals: Int = 0, hint: String? = null, onChange: (Float) -> Unit
+) {
+    var editing by remember { mutableStateOf(false) }
+    Column {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontSize = 12.sp, color = Neon.Dim, modifier = Modifier.weight(1f))
+            Text(
+                String.format("%.${decimals}f", value) + " " + unit, fontSize = 13.sp, color = Neon.Green,
+                modifier = Modifier.clip(CircleShape).background(Neon.Green.copy(alpha = 0.1f)).clickable { editing = true }.padding(horizontal = 10.dp, vertical = 4.dp)
+            )
+        }
+        if (hint != null) Text(hint, fontSize = 10.sp, color = Neon.Dim)
         Slider(value = value, onValueChange = onChange, valueRange = range, colors = neonSlider())
     }
+    if (editing) {
+        var txt by remember { mutableStateOf(String.format("%.${decimals}f", value)) }
+        AlertDialog(
+            onDismissRequest = { editing = false },
+            title = { Text(label) },
+            text = {
+                OutlinedTextField(
+                    value = txt, onValueChange = { txt = it }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    label = { Text(if (unit.isBlank()) "valor" else unit) }, supportingText = { Text("De ${range.start} a ${range.endInclusive}") }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    txt.replace(',', '.').toFloatOrNull()?.let { onChange(it.coerceIn(range.start, range.endInclusive)) }
+                    editing = false
+                }) { Text("OK", color = Neon.Green) }
+            },
+            dismissButton = { TextButton(onClick = { editing = false }) { Text("Cancelar") } }
+        )
+    }
 }
 
 @Composable
-private fun DynSection() {
-    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text("COMPRESSOR MULTIBANDA", fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
-                Text("3 bandas: graves, médios e agudos", fontSize = 11.sp, color = Neon.Dim)
-            }
-            Switch(
-                checked = AudioFx.compOn, onCheckedChange = { AudioFx.compOn = it; AudioFx.apply() },
-                colors = SwitchDefaults.colors(checkedTrackColor = Neon.Green, checkedThumbColor = Neon.OnGreen)
-            )
+private fun SwitchRow(title: String, sub: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Title(title)
+            if (sub.isNotEmpty()) Text(sub, fontSize = 11.sp, color = Neon.Dim)
         }
-        SliderRow("Threshold", AudioFx.thr, -60f..0f, "dB") { AudioFx.thr = it; AudioFx.apply() }
-        SliderRow("Ratio", AudioFx.ratio, 1f..20f, ": 1", 1) { AudioFx.ratio = it; AudioFx.apply() }
-        SliderRow("Attack", AudioFx.attack, 1f..100f, "ms") { AudioFx.attack = it; AudioFx.apply() }
-        SliderRow("Release", AudioFx.release, 10f..1000f, "ms") { AudioFx.release = it; AudioFx.apply() }
-        SliderRow("Ganho de compensação", AudioFx.makeup, 0f..12f, "dB", 1) { AudioFx.makeup = it; AudioFx.apply() }
-    }
-    Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text("LIMITADOR", fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
-                Text("Evita distorção quando o som está alto", fontSize = 11.sp, color = Neon.Dim)
-            }
-            Switch(
-                checked = AudioFx.limOn, onCheckedChange = { AudioFx.limOn = it; AudioFx.apply() },
-                colors = SwitchDefaults.colors(checkedTrackColor = Neon.Green, checkedThumbColor = Neon.OnGreen)
-            )
-        }
-        SliderRow("Teto (threshold)", AudioFx.limThr, -12f..0f, "dB", 1) { AudioFx.limThr = it; AudioFx.apply() }
+        Switch(checked = checked, onCheckedChange = onChange, colors = neonSwitch())
     }
 }
 
+// ---- Dinâmica ----
+@Composable
+private fun DynSection() {
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
+        SwitchRow("COMPRESSOR", "Processamento próprio, joelho suave", AudioFx.compOn) { AudioFx.compOn = it; AudioFx.apply() }
+        Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip("Detector RMS", AudioFx.compRms) { AudioFx.compRms = true; AudioFx.apply() }
+            Chip("Detector Pico", !AudioFx.compRms) { AudioFx.compRms = false; AudioFx.apply() }
+        }
+        SliderRow("Threshold", AudioFx.thr, -60f..0f, "dB", 1, hint = "Nível a partir do qual o compressor começa a atuar") { AudioFx.thr = it; AudioFx.apply() }
+        SliderRow("Ratio", AudioFx.ratio, 1f..20f, ": 1", 1, hint = "Quanto o excesso é reduzido (2:1 suave, 10:1 firme)") { AudioFx.ratio = it; AudioFx.apply() }
+        SliderRow("Knee (joelho)", AudioFx.knee, 0f..24f, "dB", 1, hint = "Alto = transição suave; 0 = brusca") { AudioFx.knee = it; AudioFx.apply() }
+        SliderRow("Attack", AudioFx.attack, 0.1f..100f, "ms", 1, hint = "Alto preserva o ataque dos graves; baixo segura picos") { AudioFx.attack = it; AudioFx.apply() }
+        SliderRow("Release", AudioFx.release, 10f..1000f, "ms", hint = "Alto deixa o som mais contínuo e suave") { AudioFx.release = it; AudioFx.apply() }
+        SliderRow("Ganho de compensação", AudioFx.makeup, 0f..18f, "dB", 1, hint = "Devolve o volume perdido na compressão") { AudioFx.makeup = it; AudioFx.apply() }
+    }
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
+        SwitchRow("LIMITADOR", "Look-ahead de 5 ms + proteção no teto (pico de amostra, não true-peak)", AudioFx.limOn) { AudioFx.limOn = it; AudioFx.apply() }
+        SliderRow("Teto (ceiling)", AudioFx.limThr, -12f..0f, "dB", 1, hint = "Nível máximo de saída; -1 dB é seguro") { AudioFx.limThr = it; AudioFx.apply() }
+        SliderRow("Release", AudioFx.limRelease, 10f..500f, "ms") { AudioFx.limRelease = it; AudioFx.apply() }
+    }
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
+        SwitchRow("COMPRESSOR MULTIBANDA (SISTEMA)", "3 bandas; depende do aparelho", AudioFx.mbcOn) { AudioFx.mbcOn = it; AudioFx.apply() }
+        SliderRow("Threshold", AudioFx.mbcThr, -60f..0f, "dB", 1) { AudioFx.mbcThr = it; AudioFx.apply() }
+        SliderRow("Ratio", AudioFx.mbcRatio, 1f..20f, ": 1", 1) { AudioFx.mbcRatio = it; AudioFx.apply() }
+    }
+}
+
+// ---- Efeitos / estéreo ----
 @Composable
 private fun FxSection(vm: PlayerViewModel) {
     Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
-        Text("GANHO E BALANÇO", fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
-        SliderRow("Pré-amplificador", AudioFx.preamp, -12f..12f, "dB", 1) { AudioFx.preamp = it; AudioFx.apply() }
-        SliderRow("Loudness (volume extra)", AudioFx.loudness, 0f..10f, "dB", 1) { AudioFx.loudness = it; AudioFx.apply() }
+        Title("GANHO E SEGURANÇA")
+        SliderRow("Pré-amplificador", AudioFx.preamp, -12f..12f, "dB", 1, hint = "Reduza se ouvir distorção ao reforçar graves") { AudioFx.preamp = it; AudioFx.apply() }
+        SwitchRow("ATENUAÇÃO AUTOMÁTICA", "Reduz o ganho pelo maior reforço do EQ para evitar clipping", AudioFx.autoHeadroom) { AudioFx.autoHeadroom = it; AudioFx.apply() }
         SliderRow("Balanço (esquerda ← → direita)", AudioFx.balance, -1f..1f, "", 2) { AudioFx.balance = it; AudioFx.apply() }
     }
     Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
-        Text("EFEITOS", fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
-        SliderRow("Bass Boost (reforço de graves)", AudioFx.bassPct, 0f..100f, "%") { AudioFx.bassPct = it; AudioFx.apply() }
-        SliderRow("Surround (virtualizador)", AudioFx.virtPct, 0f..100f, "%") { AudioFx.virtPct = it; AudioFx.apply() }
-        Text("Bass Boost e Surround dependem do seu aparelho; em alguns não fazem efeito.", fontSize = 11.sp, color = Neon.Dim)
+        Title("ESTÉREO")
+        SliderRow("Largura (0 = mono, 1 = original)", AudioFx.width, 0f..2f, "x", 2) { AudioFx.width = it; AudioFx.apply() }
+        SliderRow("Crossfeed (para fones)", AudioFx.crossfeed, 0f..1f, "", 2, hint = "Mistura leve entre os lados; reduz o som \"dentro da cabeça\"") { AudioFx.crossfeed = it; AudioFx.apply() }
+        Text("A largura usa Mid/Side: o centro (mono) nunca é alterado.", fontSize = 11.sp, color = Neon.Dim)
     }
     Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
-        Text("VELOCIDADE E TOM", fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
+        Title("EFEITOS DO SISTEMA (DEPENDEM DO APARELHO)")
+        SliderRow("Loudness (volume extra)", AudioFx.loudness, 0f..10f, "dB", 1) { AudioFx.loudness = it; AudioFx.apply() }
+        SliderRow("Bass Boost", AudioFx.bassPct, 0f..100f, "%") { AudioFx.bassPct = it; AudioFx.apply() }
+        SliderRow("Surround (virtualizador)", AudioFx.virtPct, 0f..100f, "%") { AudioFx.virtPct = it; AudioFx.apply() }
+    }
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
+        Title("VELOCIDADE E TOM")
         SliderRow("Velocidade", vm.speed, 0.5f..2f, "x", 2) { vm.changeSpeed(it) }
         SliderRow("Tom (pitch)", vm.pitch, 0.5f..2f, "x", 2) { vm.changePitch(it) }
-        Text("Volte os dois para 1,00 para o som original.", fontSize = 11.sp, color = Neon.Dim)
     }
+    GhostButton("Resetar todos os ajustes de áudio", Modifier.fillMaxWidth()) { AudioFx.resetAll() }
 }
 
+// ---- Presets ----
 @Composable
 private fun PresetSection() {
     val ctx = LocalContext.current
     var msg by remember { mutableStateOf("") }
     var newName by remember { mutableStateOf("") }
+    var pending by remember { mutableStateOf("") }
+    val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) {
+            try { ctx.contentResolver.openOutputStream(uri)?.use { it.write(pending.toByteArray()) }; msg = "Arquivo salvo" }
+            catch (e: Exception) { msg = "Não foi possível salvar o arquivo" }
+        }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            val txt = ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: ""
-            val n = AudioFx.importApo(txt)
-            msg = if (n > 0) "Preset importado: $n filtros" else "Nenhum filtro reconhecido no arquivo"
-        }
-    }
-    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("PRESETS PRONTOS", fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AudioFx.PRESETS.keys.forEach { n -> Chip(n) { AudioFx.applyPreset(n) } }
-        }
-    }
-    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("MEUS PRESETS", fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
-        OutlinedTextField(
-            value = newName, onValueChange = { newName = it }, singleLine = true,
-            label = { Text("Nome do preset") }, modifier = Modifier.fillMaxWidth()
-        )
-        PrimaryButton("Salvar ajustes atuais") {
-            if (newName.isNotBlank()) { AudioFx.saveCustom(newName); msg = "Preset \"${newName.trim()}\" salvo"; newName = "" }
-        }
-        if (AudioFx.customNames.isEmpty()) Text("Nenhum preset salvo ainda.", fontSize = 12.sp, color = Neon.Dim)
-        AudioFx.customNames.toList().forEach { n ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(n, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Aplicar", color = Neon.Green, modifier = Modifier.clickable { AudioFx.loadCustom(n); msg = "Preset \"$n\" aplicado" }.padding(10.dp))
-                Text("Apagar", color = Neon.Dim, modifier = Modifier.clickable { AudioFx.deleteCustom(n) }.padding(10.dp))
+            val txt = try { ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: "" } catch (e: Exception) { "" }
+            msg = if (txt.trimStart().startsWith("{")) AudioFx.importJson(txt) else {
+                val n = AudioFx.importApo(txt)
+                if (n > 0) "Importado como EQ paramétrico: $n filtros. ${AudioFx.importNote}" else "Nenhum filtro reconhecido no arquivo"
             }
         }
     }
-    OutlinedButton(
-        onClick = { picker.launch(arrayOf("text/plain", "*/*")) }, shape = CircleShape,
-        border = BorderStroke(1.dp, Neon.Green), modifier = Modifier.fillMaxWidth().height(52.dp)
-    ) {
-        Icon(Icons.Rounded.FileOpen, null, tint = Neon.Green)
-        Text("  Importar preset (AutoEQ / Equalizer APO)", color = Neon.Green, fontWeight = FontWeight.SemiBold)
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Title("PRESETS PRONTOS (EQ GRÁFICO)")
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AudioFx.PRESETS.keys.forEach { n -> Chip(n) { AudioFx.applyPreset(n) } }
+        }
+        Text("Não há curvas de fones embutidas: use a importação AutoEQ para o seu modelo.", fontSize = 11.sp, color = Neon.Dim)
+    }
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Title("MEUS PERFIS")
+        OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true, label = { Text("Nome do perfil") }, modifier = Modifier.fillMaxWidth())
+        PrimaryButton("Salvar ajustes atuais") {
+            if (newName.isNotBlank()) { AudioFx.saveCustom(newName); msg = "Perfil \"${newName.trim()}\" salvo"; newName = "" }
+        }
+        if (AudioFx.customNames.isEmpty()) Text("Nenhum perfil salvo ainda.", fontSize = 12.sp, color = Neon.Dim)
+        AudioFx.customNames.toList().forEach { n ->
+            Column {
+                Text(n, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    Text("Aplicar", color = Neon.Green, modifier = Modifier.clickable { AudioFx.loadCustom(n); msg = "\"$n\" aplicado" }.padding(10.dp))
+                    Text("Duplicar", color = Neon.Dim, modifier = Modifier.clickable { AudioFx.duplicateCustom(n) }.padding(10.dp))
+                    Text("Renomear", color = Neon.Dim, modifier = Modifier.clickable {
+                        if (newName.isNotBlank()) { AudioFx.renameCustom(n, newName); newName = "" } else msg = "Digite o novo nome no campo acima"
+                    }.padding(10.dp))
+                    Text("Apagar", color = Neon.Dim, modifier = Modifier.clickable { AudioFx.deleteCustom(n) }.padding(10.dp))
+                }
+            }
+        }
+    }
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Title("COMPARAR A / B")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostButton("Guardar A", Modifier.weight(1f)) { AudioFx.storeAB(0); msg = "Ajustes atuais guardados em A" }
+            GhostButton("Guardar B", Modifier.weight(1f)) { AudioFx.storeAB(1); msg = "Ajustes atuais guardados em B" }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostButton("Ouvir A", Modifier.weight(1f)) { if (!AudioFx.recallAB(0)) msg = "A está vazio" }
+            GhostButton("Ouvir B", Modifier.weight(1f)) { if (!AudioFx.recallAB(1)) msg = "B está vazio" }
+        }
+    }
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Title("IMPORTAR / EXPORTAR")
+        GhostButton("Importar (AutoEQ, Equalizer APO ou JSON)", Modifier.fillMaxWidth()) { picker.launch(arrayOf("text/plain", "application/json", "*/*")) }
+        GhostButton("Exportar ajustes atuais (JSON)", Modifier.fillMaxWidth()) { pending = AudioFx.exportCurrent(); saver.launch("toxic-preset.json") }
+        GhostButton("Backup de todos os perfis (JSON)", Modifier.fillMaxWidth()) { pending = AudioFx.exportAll(); saver.launch("toxic-backup.json") }
     }
     if (msg.isNotEmpty()) Text(msg, color = Neon.Dim, fontSize = 12.sp)
 }

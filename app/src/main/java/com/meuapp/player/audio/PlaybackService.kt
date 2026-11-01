@@ -1,21 +1,35 @@
 package com.meuapp.player.audio
 
+import android.content.Context
 import android.content.Intent
+import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
-/** Toca em segundo plano, com notificação e controles na tela de bloqueio (o Media3 cuida disso). */
+/** Toca em segundo plano (notificação e tela de bloqueio pelo Media3) com o motor de DSP do Toxic Player no pipeline. */
+@OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
 
     override fun onCreate() {
         super.onCreate()
         AudioFx.init(this)
-        val player = ExoPlayer.Builder(this)
+        val renderers = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink? = DefaultAudioSink.Builder(context)
+                .setAudioProcessorChain(DefaultAudioSink.DefaultAudioProcessorChain(DspEngine.processor))
+                .build()
+        }
+        val player = ExoPlayer.Builder(this, renderers)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
