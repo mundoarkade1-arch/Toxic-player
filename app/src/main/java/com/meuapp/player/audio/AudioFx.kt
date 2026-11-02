@@ -258,7 +258,13 @@ object AudioFx {
         val j = customJson(); val o = j.optJSONObject(old) ?: return
         j.remove(old); j.put(new.trim(), o); writeCustom(j)
     }
-    /** Liga/desliga todos os efeitos sem perder o nome do preset ativo. */
+
+    /**
+     * Liga/desliga todos os efeitos sem perder o nome do preset ativo.
+     * O @JvmName evita o conflito com o setter `setEnabled(Boolean)` gerado pela propriedade [enabled].
+     * Em Kotlin continua sendo chamado como `AudioFx.setEnabled(...)`.
+     */
+    @JvmName("setAllEffects")
     fun setEnabled(v: Boolean) { val n = activeName; enabled = v; apply(); activeName = n }
 
     fun applyPreset(name: String) {
