@@ -22,6 +22,7 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         AudioFx.init(this)
+        RouteWatcher.start(this)
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
                 context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean
@@ -42,6 +43,7 @@ class PlaybackService : MediaSessionService() {
             override fun onAudioSessionIdChanged(audioSessionId: Int) { AudioFx.attach(audioSessionId) }
         })
         AudioFx.attach(player.audioSessionId)
+        SleepTimer.attach(player)
         session = MediaSession.Builder(this, player).build()
     }
 
@@ -55,6 +57,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         session?.run { player.release(); release() }
         session = null
+        SleepTimer.detach()
         AudioFx.release()
         super.onDestroy()
     }

@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
@@ -20,6 +21,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.meuapp.player.audio.AudioFx
@@ -29,6 +31,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 
 class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     var tracks by mutableStateOf<List<Track>>(emptyList()); private set
@@ -43,6 +46,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     var pitch by mutableFloatStateOf(1f); private set
     var playError by mutableStateOf<String?>(null); private set
     var currentTrack by mutableStateOf<Track?>(null); private set
+    var queue by mutableStateOf<List<Track>>(emptyList()); private set
+    var queueIndex by mutableIntStateOf(0); private set
+    val playlists = mutableStateMapOf<String, List<Long>>()
 
     // Biblioteca
     var openFolder by mutableStateOf<String?>(null); private set
@@ -60,13 +66,22 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("session", Context.MODE_PRIVATE)
     private var restored = false
     private var lastSave = 0L
+    private var byLong: Map<Long, Track> = emptyMap()
+    var showTips by mutableStateOf(!prefs.getBoolean("tips_seen", false)); private set
+    fun dismissTips() { showTips = false; prefs.edit().putBoolean("tips_seen", true).apply() }
 
     // ---------- Biblioteca ----------
-    fun groups(mode: Int): List<Folder> = when (mode) {
-        1 -> tracks.groupBy { it.artist }.map { (k, l) -> Folder("A:$k", k, l.size) }
-        2 -> tracks.groupBy { it.album }.map { (k, l) -> Folder("B:$k", k, l.size) }
-        else -> tracks.groupBy { it.folderPath }.map { (p, l) -> Folder("F:$p", l.first().folderName, l.size) }
-    }.sortedBy { it.name.lowercase() }
+    fun groups(mode: Int): List<Folder> {
+        if (mode == 3) {
+            return playlists.map { (k, v) -> Folder("P:$k", k, v.size) }
+                .sortedWith(compareBy<Folder>({ it.name != FAVORITES }, { it.name.lowercase() }))
+        }
+        return when (mode) {
+            1 -> tracks.groupBy { it.artist }.map { (k, l) -> Folder("A:$k", k, l.size) }
+            2 -> tracks.groupBy { it.album }.map { (k, l) -> Folder("B:$k", k, l.size) }
+            else -> tracks.groupBy { it.folderPath }.map { (p, l) -> Folder("F:$p", l.first().folderName, l.size) }
+        }.sortedBy { it.name.lowercase() }
+    }
 
     private fun sorted(l: List<Track>): List<Track> = when (sortMode) {
         1 -> l.sortedBy { it.artist.lowercase() }
@@ -74,7 +89,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         else -> l.sortedBy { it.title.lowercase() }
     }
 
-    fun tracksIn(key: String?): List<Track> = sorted(
+    /** Músicas de uma pasta, artista, álbum ou lista (listas mantêm a ordem em que foram montadas). */
+    fun tracksIn(key: String?): List<Track> =
+        if (key != null && key.startsWith("P:")) (playlists[key.drop(2)] ?: emptyList()).mapNotNull { byLong[it] }
+        else tracksSorted(key)
+
+    private fun tracksSorted(key: String?): List<Track> = sorted(
         when {
             key == null || key == ALL_FOLDERS -> tracks
             key.startsWith("F:") -> tracks.filter { it.folderPath == key.drop(2) }
@@ -100,6 +120,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Conexão com o player ----------
     init {
         AudioFx.init(app)
+        loadPlaylists()
         val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
         val future = MediaController.Builder(app, token).buildAsync()
         future.addListener({
@@ -112,7 +133,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     artist = m.artist?.toString() ?: "Artista desconhecido"
                     refreshCurrent()
                 }
-                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { savePos(); refreshCurrent() }
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { savePos(); refreshCurrent(); refreshQueue() }
+                override fun onTimelineChanged(timeline: Timeline, reason: Int) { refreshQueue() }
                 override fun onPlayerError(error: PlaybackException) {
                     // Arquivo removido ou ilegível: avisa e pula para a próxima faixa
                     playError = "Não foi possível tocar esta faixa"
@@ -239,7 +261,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             } catch (e: Exception) { /* permissão negada ou erro do MediaStore: lista vazia */ }
-            withContext(Dispatchers.Main) { tracks = list; syncOrRestore(); refreshCurrent() }
+            withContext(Dispatchers.Main) { tracks = list; byLong = list.associateBy { it.id }; syncOrRestore(); refreshCurrent(); refreshQueue() }
         }
     }
 
@@ -273,6 +295,100 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun changeSpeed(v: Float) { speed = v; controller?.setPlaybackParameters(PlaybackParameters(speed, pitch)) }
     fun changePitch(v: Float) { pitch = v; controller?.setPlaybackParameters(PlaybackParameters(speed, pitch)) }
+
+    // ---------- Fila ----------
+    private fun refreshQueue() {
+        val c = controller ?: return
+        val l = ArrayList<Track>()
+        for (i in 0 until c.mediaItemCount) {
+            val item = c.getMediaItemAt(i)
+            val id = item.mediaId.toLongOrNull() ?: 0L
+            l.add(byLong[id] ?: Track(id, item.mediaMetadata.title?.toString() ?: "Faixa", item.mediaMetadata.artist?.toString() ?: "", "", 0L, 0L, "", ""))
+        }
+        queue = l
+        queueIndex = c.currentMediaItemIndex
+    }
+
+    private fun saveQueueFromController() {
+        val c = controller ?: return
+        val ids = JSONArray()
+        for (i in 0 until c.mediaItemCount) ids.put(c.getMediaItemAt(i).mediaId)
+        prefs.edit().putString("ids", ids.toString()).apply()
+    }
+
+    fun playQueueIndex(i: Int) { controller?.let { it.seekTo(i, 0L); it.play() } }
+
+    fun removeFromQueue(i: Int) {
+        controller?.let { if (it.mediaItemCount > 1 && i in 0 until it.mediaItemCount) it.removeMediaItem(i) }
+        saveQueueFromController()
+    }
+
+    fun moveQueueItem(from: Int, to: Int) {
+        controller?.let { if (to in 0 until it.mediaItemCount && from in 0 until it.mediaItemCount) it.moveMediaItem(from, to) }
+        saveQueueFromController()
+    }
+
+    fun playNext(t: Track) {
+        val c = controller ?: return
+        if (c.mediaItemCount == 0) { playList(listOf(t), 0); return }
+        c.addMediaItem(c.currentMediaItemIndex + 1, mediaItem(t))
+        saveQueueFromController()
+    }
+
+    fun addToQueue(t: Track) {
+        val c = controller ?: return
+        if (c.mediaItemCount == 0) { playList(listOf(t), 0); return }
+        c.addMediaItem(mediaItem(t))
+        saveQueueFromController()
+    }
+
+    // ---------- Favoritas e listas ----------
+    private fun loadPlaylists() {
+        val j = try { JSONObject(prefs.getString("playlists", "{}") ?: "{}") } catch (e: Exception) { JSONObject() }
+        val ks = j.keys()
+        while (ks.hasNext()) {
+            val k = ks.next()
+            val a = j.optJSONArray(k) ?: continue
+            playlists[k] = List(a.length()) { a.optLong(it) }
+        }
+        if (!playlists.containsKey(FAVORITES)) playlists[FAVORITES] = emptyList()
+    }
+
+    private fun savePlaylists() {
+        val j = JSONObject()
+        playlists.forEach { (k, v) -> val a = JSONArray(); v.forEach { a.put(it) }; j.put(k, a) }
+        prefs.edit().putString("playlists", j.toString()).apply()
+    }
+
+    fun isFav(id: Long): Boolean = playlists[FAVORITES]?.contains(id) == true
+
+    fun toggleFav(id: Long) {
+        val l = playlists[FAVORITES] ?: emptyList()
+        playlists[FAVORITES] = if (id in l) l - id else l + id
+        savePlaylists()
+    }
+
+    fun createPlaylist(name: String): Boolean {
+        val n = name.trim()
+        if (n.isEmpty() || playlists.containsKey(n)) return false
+        playlists[n] = emptyList(); savePlaylists(); return true
+    }
+
+    fun deletePlaylist(name: String) {
+        if (name == FAVORITES) return
+        playlists.remove(name); savePlaylists()
+        if (openFolder == "P:$name") openFolder = null
+    }
+
+    fun addToPlaylist(name: String, id: Long) {
+        val l = playlists[name] ?: emptyList()
+        if (id !in l) { playlists[name] = l + id; savePlaylists() }
+    }
+
+    fun removeFromPlaylist(name: String, id: Long) {
+        val l = playlists[name] ?: return
+        playlists[name] = l - id; savePlaylists()
+    }
 
     // ---------- Atualização automática ----------
     fun checkUpdate(force: Boolean = false) {

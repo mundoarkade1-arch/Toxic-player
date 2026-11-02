@@ -39,6 +39,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import com.meuapp.player.ALL_FOLDERS
+import com.meuapp.player.FAVORITES
+import com.meuapp.player.audio.SleepTimer
 import com.meuapp.player.BuildConfig
 import com.meuapp.player.PlayerViewModel
 import com.meuapp.player.audio.AudioFx
@@ -59,6 +61,22 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
     val bg by rememberCover(vm.currentTrack, 48)
     val target = bg?.let { lerp(Neon.Glow, Color(CoverLoader.averageColor(it)), 0.5f) } ?: Neon.Glow
     val glowColor by animateColorAsState(target, tween(700), label = "glow")
+    if (vm.showTips) {
+        AlertDialog(
+            onDismissRequest = { vm.dismissTips() },
+            title = { Text("Bem-vindo ao Toxic Player") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("• Biblioteca: pastas, artistas, álbuns, listas e busca.")
+                    Text("• Player: toque no chip \"Efeitos\" para ouvir com e sem o preset.")
+                    Text("• Mesa: EQ, compressor, limitador e estéreo. Toque no número de um controle para digitar o valor exato.")
+                    Text("• Presets: importe AutoEQ/APO e escolha um perfil automático para fones, Bluetooth e alto-falante.")
+                    Text("• Fila e Timer para dormir ficam no Player.")
+                }
+            },
+            confirmButton = { TextButton(onClick = { vm.dismissTips() }) { Text("Entendi", color = Neon.Green) } }
+        )
+    }
     Scaffold(
         containerColor = Neon.Bg,
         bottomBar = { NavBar(tab, vm.update != null) { tab = it } }
@@ -156,7 +174,11 @@ private fun Title(text: String) = Text(text, fontSize = 12.sp, letterSpacing = 2
 // ───────────── Player ─────────────
 @Composable
 fun PlayerScreen(vm: PlayerViewModel) {
+    var showQueue by remember { mutableStateOf(false) }
+    var showTimer by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
+        if (showQueue) QueueDialog(vm) { showQueue = false }
+        if (showTimer) TimerDialog { showTimer = false }
         Watermark(Icons.Rounded.GraphicEq, Modifier.align(Alignment.TopEnd).offset(130.dp, (-40).dp))
         Watermark(Icons.Rounded.MusicNote, Modifier.align(Alignment.BottomStart).offset((-150).dp, 70.dp))
         Column(
@@ -172,6 +194,11 @@ fun PlayerScreen(vm: PlayerViewModel) {
                 vm.playError?.let { Text(it, fontSize = 12.sp, color = Color(0xFFFF6B6B)) }
             }
             LiveSpectrum(vm.isPlaying)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip(if (AudioFx.enabled) "Efeitos: ${AudioFx.activeName}" else "Efeitos desligados", AudioFx.enabled) { AudioFx.setEnabled(!AudioFx.enabled) }
+                Chip("Fila (${vm.queue.size})") { showQueue = true }
+                Chip(if (SleepTimer.leftSec > 0) "Timer ${SleepTimer.leftSec / 60 + 1} min" else "Timer") { showTimer = true }
+            }
             Column {
                 Slider(
                     value = if (vm.duration > 0) (vm.position.toFloat() / vm.duration).coerceIn(0f, 1f) else 0f,
@@ -202,6 +229,57 @@ fun PlayerScreen(vm: PlayerViewModel) {
 
 /** Capa do álbum em destaque, com um disco de vinil girando atrás e brilho na cor da capa. */
 @Composable
+private fun QueueDialog(vm: PlayerViewModel, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Fila (${vm.queue.size})") },
+        text = {
+            if (vm.queue.isEmpty()) {
+                Text("A fila está vazia.", color = Neon.Dim)
+            } else {
+                LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    items(vm.queue.size) { i ->
+                        val t = vm.queue[i]
+                        val now = i == vm.queueIndex
+                        Row(Modifier.fillMaxWidth().clickable { vm.playQueueIndex(i) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${i + 1}", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.width(26.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, color = if (now) Neon.Green else Color.White)
+                                Text(t.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp, color = Neon.Dim)
+                            }
+                            if (i > 0) IconButton(onClick = { vm.moveQueueItem(i, i - 1) }) { Icon(Icons.Rounded.KeyboardArrowUp, "Subir", tint = Neon.Dim) }
+                            IconButton(onClick = { vm.removeFromQueue(i) }) { Icon(Icons.Rounded.Close, "Remover", tint = Neon.Dim) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Fechar", color = Neon.Green) } }
+    )
+}
+
+@Composable
+private fun TimerDialog(onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Timer para dormir") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    if (SleepTimer.leftSec > 0) "Pausa em ${SleepTimer.leftSec / 60}:${"%02d".format(SleepTimer.leftSec % 60)} (com fade-out)" else "Desligado",
+                    color = Neon.Dim
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(15, 30, 45, 60, 90).forEach { m -> Chip("$m min") { SleepTimer.start(m); onClose() } }
+                }
+                if (SleepTimer.leftSec > 0) GhostButton("Cancelar timer", Modifier.fillMaxWidth()) { SleepTimer.cancel(); onClose() }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Fechar", color = Neon.Green) } }
+    )
+}
+
+@Composable
 private fun CoverStage(track: Track?, playing: Boolean) {
     val cover by rememberCover(track, 600)
     val tint = cover?.let { Color(CoverLoader.averageColor(it)) } ?: Neon.Green
@@ -209,8 +287,8 @@ private fun CoverStage(track: Track?, playing: Boolean) {
     LaunchedEffect(playing) {
         if (playing) while (true) rot.animateTo(rot.value + 360f, tween(9000, easing = LinearEasing))
     }
-    Box(Modifier.fillMaxWidth().height(250.dp)) {
-        Canvas(Modifier.size(215.dp).align(Alignment.CenterEnd).rotate(rot.value % 360f)) {
+    Box(Modifier.fillMaxWidth().height(230.dp)) {
+        Canvas(Modifier.size(200.dp).align(Alignment.CenterEnd).rotate(rot.value % 360f)) {
             val r = size.minDimension / 2
             drawCircle(Brush.radialGradient(listOf(Color(0xFF101612), Color(0xFF070A08))), r)
             for (i in 1..14) drawCircle(Color.White.copy(alpha = 0.05f), r * (0.3f + i * 0.045f), style = Stroke(1f))
@@ -219,7 +297,7 @@ private fun CoverStage(track: Track?, playing: Boolean) {
             drawCircle(Neon.Green.copy(alpha = 0.5f), r - 1.dp.toPx(), style = Stroke(2.dp.toPx()))
         }
         Box(
-            Modifier.size(245.dp).align(Alignment.CenterStart)
+            Modifier.size(225.dp).align(Alignment.CenterStart)
                 .drawBehind { drawCircle(tint.copy(alpha = 0.35f), size.minDimension * 0.72f) }
                 .clip(RoundedCornerShape(28.dp)).background(Color(0xFF0B0F0D))
                 .border(1.dp, Neon.Border, RoundedCornerShape(28.dp)),
@@ -288,7 +366,7 @@ fun LibraryScreen(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit, go
                 Spacer(Modifier.height(14.dp))
                 PermissionCard("Permita o acesso às músicas do celular.", "Permitir", askPerm)
             } else if (open != null) {
-                TrackList(vm, vm.tracksIn(open), groupTitle(vm, open), true, goPlayer)
+                TrackList(vm, vm.tracksIn(open), groupTitle(vm, open), true, goPlayer, if (open.startsWith("P:")) open.drop(2) else null)
             } else {
                 LibraryRoot(vm, goPlayer)
             }
@@ -296,11 +374,16 @@ fun LibraryScreen(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit, go
     }
 }
 
-private fun groupTitle(vm: PlayerViewModel, key: String): String =
-    if (key == ALL_FOLDERS) "Todas as músicas" else vm.groups(0).plus(vm.groups(1)).plus(vm.groups(2)).firstOrNull { it.path == key }?.name ?: "Grupo"
+private fun groupTitle(vm: PlayerViewModel, key: String): String = when {
+    key == ALL_FOLDERS -> "Todas as músicas"
+    key.startsWith("P:") -> key.drop(2)
+    else -> vm.groups(0).plus(vm.groups(1)).plus(vm.groups(2)).firstOrNull { it.path == key }?.name ?: "Grupo"
+}
 
 @Composable
 private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
+    var newListDialog by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
     Text("BIBLIOTECA", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
     Text("${vm.tracks.size} músicas", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 10.dp))
     OutlinedTextField(
@@ -314,21 +397,35 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
         TrackList(vm, vm.searchResults(), "Resultados", false, goPlayer)
         return
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Chip("Pastas", vm.libMode == 0) { vm.changeLibMode(0) }
         Chip("Artistas", vm.libMode == 1) { vm.changeLibMode(1) }
         Chip("Álbuns", vm.libMode == 2) { vm.changeLibMode(2) }
+        Chip("Listas", vm.libMode == 3) { vm.changeLibMode(3) }
     }
     Spacer(Modifier.height(10.dp))
-    if (vm.tracks.isEmpty()) {
+    if (vm.libMode == 3) {
+        GhostButton("Criar lista", Modifier.fillMaxWidth()) { newListDialog = true }
+        Spacer(Modifier.height(10.dp))
+    }
+    if (vm.tracks.isEmpty() && vm.libMode != 3) {
         Text("Nenhuma música encontrada no aparelho.", color = Neon.Dim)
         return
     }
-    val groups = remember(vm.tracks, vm.libMode) { vm.groups(vm.libMode) }
-    val icon = when (vm.libMode) { 1 -> Icons.Rounded.Person; 2 -> Icons.Rounded.Album; else -> Icons.Rounded.Folder }
+    val groups = if (vm.libMode == 3) vm.groups(3) else remember(vm.tracks, vm.libMode) { vm.groups(vm.libMode) }
+    val icon = when (vm.libMode) { 1 -> Icons.Rounded.Person; 2 -> Icons.Rounded.Album; 3 -> Icons.Rounded.QueueMusic; else -> Icons.Rounded.Folder }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { GroupRow("Todas as músicas", vm.tracks.size, Icons.Rounded.LibraryMusic) { vm.enterFolder(ALL_FOLDERS) } }
-        items(groups) { g -> GroupRow(g.name, g.count, icon) { vm.enterFolder(g.path) } }
+        if (vm.libMode != 3) item { GroupRow("Todas as músicas", vm.tracks.size, Icons.Rounded.LibraryMusic) { vm.enterFolder(ALL_FOLDERS) } }
+        items(groups) { g -> GroupRow(g.name, g.count, if (g.name == FAVORITES) Icons.Rounded.Favorite else icon) { vm.enterFolder(g.path) } }
+    }
+    if (newListDialog) {
+        AlertDialog(
+            onDismissRequest = { newListDialog = false },
+            title = { Text("Nova lista") },
+            text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true, label = { Text("Nome da lista") }) },
+            confirmButton = { TextButton(onClick = { vm.createPlaylist(newName); newName = ""; newListDialog = false }) { Text("Criar", color = Neon.Green) } },
+            dismissButton = { TextButton(onClick = { newListDialog = false }) { Text("Cancelar") } }
+        )
     }
 }
 
@@ -345,7 +442,11 @@ private fun GroupRow(name: String, count: Int, icon: ImageVector, onClick: () ->
 }
 
 @Composable
-private fun TrackList(vm: PlayerViewModel, list: List<com.meuapp.player.Track>, name: String, showBack: Boolean, goPlayer: () -> Unit) {
+private fun TrackList(
+    vm: PlayerViewModel, list: List<Track>, name: String, showBack: Boolean,
+    goPlayer: () -> Unit, playlist: String? = null
+) {
+    var pickFor by remember { mutableStateOf<Track?>(null) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (showBack) IconButton(onClick = { vm.enterFolder(null) }) { Icon(Icons.Rounded.ArrowBack, "Voltar", tint = Neon.Green) }
         Column(Modifier.weight(1f)) {
@@ -354,20 +455,29 @@ private fun TrackList(vm: PlayerViewModel, list: List<com.meuapp.player.Track>, 
         }
     }
     Spacer(Modifier.height(8.dp))
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Chip("Título", vm.sortMode == 0) { vm.changeSort(0) }
-        Chip("Artista", vm.sortMode == 1) { vm.changeSort(1) }
-        Chip("Duração", vm.sortMode == 2) { vm.changeSort(2) }
+    if (playlist == null) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip("Título", vm.sortMode == 0) { vm.changeSort(0) }
+            Chip("Artista", vm.sortMode == 1) { vm.changeSort(1) }
+            Chip("Duração", vm.sortMode == 2) { vm.changeSort(2) }
+        }
+        Spacer(Modifier.height(8.dp))
     }
-    Spacer(Modifier.height(8.dp))
     if (list.isNotEmpty()) PrimaryButton("Tocar tudo") { vm.playList(list, 0); goPlayer() }
+    if (playlist != null && playlist != FAVORITES) {
+        Spacer(Modifier.height(8.dp))
+        GhostButton("Apagar esta lista", Modifier.fillMaxWidth()) { vm.deletePlaylist(playlist) }
+    }
     Spacer(Modifier.height(10.dp))
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(list.size) { i ->
             val t = list[i]
             val now = t.title == vm.title
+            var menu by remember { mutableStateOf(false) }
+            val fav = vm.isFav(t.id)
             Row(
-                Modifier.fillMaxWidth().glass(18.dp).clickable { vm.playList(list, i); goPlayer() }.padding(14.dp),
+                Modifier.fillMaxWidth().glass(18.dp).clickable { vm.playList(list, i); goPlayer() }
+                    .padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val thumb by rememberCover(t, 128)
@@ -376,13 +486,48 @@ private fun TrackList(vm: PlayerViewModel, list: List<com.meuapp.player.Track>, 
                     if (tb != null) Image(tb.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     else Icon(Icons.Rounded.MusicNote, null, tint = if (now) Neon.Green else Neon.Dim)
                 }
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                     Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (now) Neon.Green else Color.White)
-                    Text(t.artist, fontSize = 12.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${t.artist} · ${fmt(t.durationMs)}", fontSize = 12.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Text(fmt(t.durationMs), fontSize = 12.sp, color = Neon.Dim)
+                IconButton(onClick = { vm.toggleFav(t.id) }) {
+                    Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, "Favoritar", tint = if (fav) Neon.Green else Neon.Dim)
+                }
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "Mais opções", tint = Neon.Dim) }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Tocar a seguir") }, onClick = { vm.playNext(t); menu = false })
+                        DropdownMenuItem(text = { Text("Adicionar à fila") }, onClick = { vm.addToQueue(t); menu = false })
+                        DropdownMenuItem(text = { Text("Adicionar à lista...") }, onClick = { pickFor = t; menu = false })
+                        if (playlist != null) {
+                            DropdownMenuItem(text = { Text("Remover desta lista") }, onClick = { vm.removeFromPlaylist(playlist, t.id); menu = false })
+                        }
+                    }
+                }
             }
         }
+    }
+    pickFor?.let { tr ->
+        var newName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { pickFor = null },
+            title = { Text("Adicionar à lista") },
+            text = {
+                Column {
+                    vm.playlists.keys.sorted().forEach { n ->
+                        Text(n, Modifier.fillMaxWidth().clickable { vm.addToPlaylist(n, tr.id); pickFor = null }.padding(12.dp))
+                    }
+                    OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true, label = { Text("Ou crie uma nova lista") })
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (vm.createPlaylist(newName)) vm.addToPlaylist(newName.trim(), tr.id)
+                    pickFor = null
+                }) { Text("Criar e adicionar", color = Neon.Green) }
+            },
+            dismissButton = { TextButton(onClick = { pickFor = null }) { Text("Fechar") } }
+        )
     }
 }
 
@@ -407,7 +552,7 @@ fun MesaScreen(vm: PlayerViewModel) {
                     Text("MESA DE ÁUDIO", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
                     Text("Toxic Sound", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 }
-                Switch(checked = AudioFx.enabled, onCheckedChange = { AudioFx.enabled = it; AudioFx.apply() }, colors = neonSwitch())
+                Switch(checked = AudioFx.enabled, onCheckedChange = { AudioFx.setEnabled(it) }, colors = neonSwitch())
             }
             if (!AudioFx.ready) Text("Toque uma música para ativar os efeitos do sistema.", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(12.dp))
@@ -474,7 +619,7 @@ private fun MetersCard() {
         LevelBar((pR + 60f) / 60f, pR > -1f)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("RMS L ${"%.0f".format(toDb(m.rmsL))} · R ${"%.0f".format(toDb(m.rmsR))} dB", fontSize = 11.sp, color = Neon.Dim)
-            Text("Comp -${"%.1f".format(m.compGrDb)} · Lim -${"%.1f".format(m.limGrDb)} dB", fontSize = 11.sp, color = Neon.Dim)
+            Text("Comp -${"%.1f".format(m.compGrDb)} · Lim -${"%.1f".format(m.limGrDb)} · Niv ${"%+.1f".format(m.levGainDb)} dB", fontSize = 11.sp, color = Neon.Dim)
         }
     }
 }
@@ -652,7 +797,8 @@ private fun DynSection() {
         SliderRow("Ganho de compensação", AudioFx.makeup, 0f..18f, "dB", 1, hint = "Devolve o volume perdido na compressão") { AudioFx.makeup = it; AudioFx.apply() }
     }
     Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
-        SwitchRow("LIMITADOR", "Look-ahead de 5 ms + proteção no teto (pico de amostra, não true-peak)", AudioFx.limOn) { AudioFx.limOn = it; AudioFx.apply() }
+        SwitchRow("LIMITADOR", "Look-ahead de 5 ms + proteção final no teto", AudioFx.limOn) { AudioFx.limOn = it; AudioFx.apply() }
+        SwitchRow("TRUE-PEAK (4×)", "Detecta picos entre as amostras. É uma aproximação, não um medidor certificado.", AudioFx.truePeak) { AudioFx.truePeak = it; AudioFx.apply() }
         SliderRow("Teto (ceiling)", AudioFx.limThr, -12f..0f, "dB", 1, hint = "Nível máximo de saída; -1 dB é seguro") { AudioFx.limThr = it; AudioFx.apply() }
         SliderRow("Release", AudioFx.limRelease, 10f..500f, "ms") { AudioFx.limRelease = it; AudioFx.apply() }
     }
@@ -671,6 +817,14 @@ private fun FxSection(vm: PlayerViewModel) {
         SliderRow("Pré-amplificador", AudioFx.preamp, -12f..12f, "dB", 1, hint = "Reduza se ouvir distorção ao reforçar graves") { AudioFx.preamp = it; AudioFx.apply() }
         SwitchRow("ATENUAÇÃO AUTOMÁTICA", "Reduz o ganho pelo maior reforço do EQ para evitar clipping", AudioFx.autoHeadroom) { AudioFx.autoHeadroom = it; AudioFx.apply() }
         SliderRow("Balanço (esquerda ← → direita)", AudioFx.balance, -1f..1f, "", 2) { AudioFx.balance = it; AudioFx.apply() }
+    }
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
+        Title("QUALIDADE DE ÁUDIO")
+        SwitchRow("DITHER (TPDF)", "Evita distorção de arredondamento na saída de 16 bits", AudioFx.ditherOn) { AudioFx.ditherOn = it; AudioFx.apply() }
+        SwitchRow("NIVELADOR DE VOLUME", "Aproxima o volume entre músicas. Não é ReplayGain: mede o som enquanto toca.", AudioFx.levelerOn) { AudioFx.levelerOn = it; AudioFx.apply() }
+        if (AudioFx.levelerOn) {
+            SliderRow("Volume alvo", AudioFx.levelerTarget, -24f..-10f, "dB", 0, hint = "Mais baixo = menos volume geral e mais folga") { AudioFx.levelerTarget = it; AudioFx.apply() }
+        }
     }
     Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
         Title("ESTÉREO")
@@ -743,6 +897,21 @@ private fun PresetSection() {
         }
     }
     Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Title("PERFIL AUTOMÁTICO POR SAÍDA")
+        val routes = listOf("speaker" to "Alto-falante", "wired" to "Fones com fio", "bluetooth" to "Bluetooth")
+        routes.forEach { (key, label) ->
+            val cur = AudioFx.routeProfiles[key].orEmpty()
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(label + if (AudioFx.currentRoute == key) " (em uso)" else "", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Chip(if (cur.isBlank()) "Nenhum" else cur) {
+                    val opts = listOf("") + AudioFx.customNames.toList()
+                    AudioFx.setRouteProfile(key, opts[(opts.indexOf(cur).coerceAtLeast(0) + 1) % opts.size])
+                }
+            }
+        }
+        Text("Toque no nome para trocar o perfil. Ele é aplicado sozinho quando a saída muda.", fontSize = 11.sp, color = Neon.Dim)
+    }
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Title("COMPARAR A / B")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton("Guardar A", Modifier.weight(1f)) { AudioFx.storeAB(0); msg = "Ajustes atuais guardados em A" }
@@ -777,6 +946,10 @@ fun UpdateScreen(vm: PlayerViewModel) {
             Text(vm.updateMsg, color = Neon.Dim, textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 8.dp))
             vm.update?.let {
                 Text("Disponível: ${it.versionName} (código ${it.versionCode})", color = Neon.Green, fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp))
+            }
+            vm.update?.notes?.takeIf { it.isNotBlank() }?.let {
+                Text(it.take(400), fontSize = 12.sp, color = Neon.Dim, modifier = Modifier.fillMaxWidth().glass(16.dp).padding(12.dp))
+                Spacer(Modifier.height(12.dp))
             }
             if (vm.progress >= 0f) {
                 LinearProgressIndicator(progress = { vm.progress }, color = Neon.Green, modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp))

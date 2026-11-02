@@ -13,7 +13,8 @@ data class Meters(
     val peakL: Float = 0f, val peakR: Float = 0f,
     val rmsL: Float = 0f, val rmsR: Float = 0f,
     val compGrDb: Float = 0f, val limGrDb: Float = 0f,
-    val clip: Boolean = false
+    val clip: Boolean = false,
+    val levGainDb: Float = 0f
 )
 
 /** Todos os parâmetros do processamento. Imutável: a interface troca o objeto inteiro. */
@@ -38,8 +39,25 @@ data class DspParams(
     val limCeilingDb: Float = -1f,
     val limReleaseMs: Float = 60f,
     val width: Float = 1f,                   // 0 = mono, 1 = original, 2 = bem largo
-    val crossfeed: Float = 0f                // 0..1
+    val crossfeed: Float = 0f,               // 0..1
+    val truePeak: Boolean = true,            // limitador com detecção true-peak aproximada (4x)
+    val levelerOn: Boolean = false,          // nivelador de volume (aproxima o volume entre músicas)
+    val levelerTargetDb: Float = -16f,
+    val ditherOn: Boolean = true             // dither TPDF na conversão para 16 bits
 )
+
+/** Converte float para 16 bits, com dither TPDF opcional (ruído triangular de ±1 LSB). */
+class Quantizer {
+    private var s = 0x1234ABCD
+    private fun rnd(): Float {
+        s = s xor (s shl 13); s = s xor (s ushr 17); s = s xor (s shl 5)
+        return (s ushr 8) / 16777216f - 0.5f
+    }
+    fun toShort(x: Float, dither: Boolean): Short {
+        val v = x * 32768f + (if (dither) rnd() + rnd() else 0f)
+        return Math.round(v).coerceIn(-32768, 32767).toShort()
+    }
+}
 
 /**
  * Motor de DSP próprio (Kotlin puro, sem Android). Cadeia por amostra:
@@ -79,6 +97,17 @@ class DspCore {
     private var rmsState = 0.0; private var grState = 0.0
     private var gLim = 1.0
     private var cfL = 0.0; private var cfR = 0.0
+    private var levPow = 0.0; private var levGainDb = 0.0; private var levGainLin = 1.0
+    private var levCoef = 0.0; private var levAttB = 0.0; private var levRelB = 0.0; private var levCount = 0
+    private val histL = DoubleArray(8); private val histR = DoubleArray(8)
+    private val tpTaps = Array(3) { p ->
+        val f = (p + 1) / 4.0
+        DoubleArray(8) { k ->
+            val d = k - 3 - f
+            val sinc = if (abs(d) < 1e-9) 1.0 else kotlin.math.sin(PI * d) / (PI * d)
+            sinc * 0.5 * (1.0 + kotlin.math.cos(PI * d / 4.0))
+        }
+    }
     private var delay = Array(2) { FloatArray(240) }; private var dPos = 0
 
     private val specBuf = FloatArray(SPEC_N)
@@ -93,6 +122,8 @@ class DspCore {
         z1 = Array(2) { DoubleArray(SLOTS) }
         z2 = Array(2) { DoubleArray(SLOTS) }
         rmsState = 0.0; grState = 0.0; gLim = 1.0; cfL = 0.0; cfR = 0.0
+        levPow = 0.0; levGainDb = 0.0; levGainLin = 1.0; levCount = 0
+        histL.fill(0.0); histR.fill(0.0)
         applied = null
     }
 
@@ -134,6 +165,9 @@ class DspCore {
         lAtt = coefTime(1.2f); lRel = coefTime(p.limReleaseMs)
         ceilLin = 10.0.pow(p.limCeilingDb / 20.0)
         cfCoef = 1.0 - exp(-2.0 * PI * 700.0 / sr)
+        levCoef = 1.0 - exp(-1.0 / (1.5 * sr))
+        levAttB = 1.0 - exp(-32.0 / (3.0 * sr))
+        levRelB = 1.0 - exp(-32.0 / (8.0 * sr))
         applied = p
     }
 
@@ -163,6 +197,19 @@ class DspCore {
 
             if (enabled) {
                 l *= preLin * gL; r *= preLin * gR
+                if (p.levelerOn) {
+                    levPow += (0.5 * (l * l + r * r) - levPow) * levCoef
+                    if (++levCount >= 32) {
+                        levCount = 0
+                        val lvl = 10.0 * log10(max(levPow, 1e-12))
+                        if (lvl > -50.0) {
+                            val tgt = (p.levelerTargetDb - lvl).coerceIn(-9.0, 6.0)
+                            levGainDb += (tgt - levGainDb) * (if (tgt < levGainDb) levAttB else levRelB)
+                            levGainLin = 10.0.pow(levGainDb / 20.0)
+                        }
+                    }
+                    l *= levGainLin; r *= levGainLin
+                }
                 for (s in 0 until SLOTS) {
                     if (!active[s]) continue
                     val q = coefs[s]
@@ -224,7 +271,18 @@ class DspCore {
             if (!gLim.isFinite()) gLim = 1.0
 
             // Limitador com look-ahead (atraso fixo) + proteção final
-            val peak = max(abs(l), abs(r))
+            for (h in 0 until 7) { histL[h] = histL[h + 1]; histR[h] = histR[h + 1] }
+            histL[7] = l; histR[7] = r
+            var peak = max(abs(l), abs(r))
+            if (limOn && p.truePeak) {
+                for (t in 0 until 3) {
+                    val w = tpTaps[t]
+                    var vl = 0.0; var vr = 0.0
+                    for (k in 0 until 8) { vl += histL[k] * w[k]; vr += histR[k] * w[k] }
+                    val m = max(abs(vl), abs(vr))
+                    if (m > peak) peak = m
+                }
+            }
             val gt = if (limOn && peak > ceilLin) ceilLin / peak else 1.0
             gLim = gt + (if (gt < gLim) lAtt else lRel) * (gLim - gt)
             if (gLim < 0.9999) { val db = -20.0 * log10(gLim); if (db > maxLim) maxLim = db }
@@ -245,7 +303,7 @@ class DspCore {
             specPos++
         }
         if (frames > 0) {
-            meters = Meters(pkL, pkR, sqrt(sumL / frames).toFloat(), sqrt(sumR / frames).toFloat(), maxComp.toFloat(), maxLim.toFloat(), clip)
+            meters = Meters(pkL, pkR, sqrt(sumL / frames).toFloat(), sqrt(sumR / frames).toFloat(), maxComp.toFloat(), maxLim.toFloat(), clip, levGainDb.toFloat())
         }
     }
 

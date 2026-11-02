@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateMapOf
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.abs
@@ -151,6 +152,13 @@ object AudioFx {
     var mbcOn by mutableStateOf(false)
     var mbcThr by mutableFloatStateOf(-24f)
     var mbcRatio by mutableFloatStateOf(3f)
+    var truePeak by mutableStateOf(true)
+    var levelerOn by mutableStateOf(false)
+    var levelerTarget by mutableFloatStateOf(-16f)
+    var ditherOn by mutableStateOf(true)
+    var activeName by mutableStateOf("Personalizado")
+    var currentRoute by mutableStateOf("speaker")
+    val routeProfiles = mutableStateMapOf<String, String>()
     var bassPct by mutableFloatStateOf(0f)
     var virtPct by mutableFloatStateOf(0f)
     val customNames = mutableStateListOf<String>()
@@ -168,6 +176,11 @@ object AudioFx {
             try { writeCustom(JSONObject().put("Toxic · Graves Suaves", JSONObject(TOXIC_BASS))) } catch (e: Exception) { }
         }
         refreshCustom()
+        try {
+            val rj = JSONObject(p.getString("routes", "{}") ?: "{}")
+            val ks = rj.keys()
+            while (ks.hasNext()) { val k = ks.next(); routeProfiles[k] = rj.optString(k, "") }
+        } catch (e: Exception) { }
         DspEngine.core.params = buildParams()
     }
 
@@ -189,6 +202,7 @@ object AudioFx {
         put("limOn", limOn); put("limThr", limThr.toDouble()); put("limRel", limRelease.toDouble())
         put("mbcOn", mbcOn); put("mbcThr", mbcThr.toDouble()); put("mbcRatio", mbcRatio.toDouble())
         put("bass", bassPct.toDouble()); put("virt", virtPct.toDouble())
+        put("tp", truePeak); put("lev", levelerOn); put("levT", levelerTarget.toDouble()); put("dith", ditherOn)
     }
 
     private fun restore(j: JSONObject) {
@@ -210,6 +224,8 @@ object AudioFx {
         limOn = j.optBoolean("limOn", true); limThr = j.f("limThr", -1f); limRelease = j.f("limRel", 60f)
         mbcOn = j.optBoolean("mbcOn", false); mbcThr = j.f("mbcThr", -24f); mbcRatio = j.f("mbcRatio", 3f)
         bassPct = j.f("bass", 0f); virtPct = j.f("virt", 0f)
+        truePeak = j.optBoolean("tp", true); levelerOn = j.optBoolean("lev", false)
+        levelerTarget = j.f("levT", -16f); ditherOn = j.optBoolean("dith", true)
     }
 
     private fun sanitize(f: EqFilter) = f.copy(
@@ -231,7 +247,7 @@ object AudioFx {
 
     // ---------- Presets, perfis, backup ----------
     fun saveCustom(name: String) { if (name.isBlank()) return; val j = customJson(); j.put(name.trim(), snapshot()); writeCustom(j) }
-    fun loadCustom(name: String) { customJson().optJSONObject(name)?.let { restore(it); apply() } }
+    fun loadCustom(name: String) { customJson().optJSONObject(name)?.let { restore(it); apply(); activeName = name } }
     fun deleteCustom(name: String) { val j = customJson(); j.remove(name); writeCustom(j) }
     fun duplicateCustom(name: String) {
         val j = customJson(); val o = j.optJSONObject(name) ?: return
@@ -242,10 +258,14 @@ object AudioFx {
         val j = customJson(); val o = j.optJSONObject(old) ?: return
         j.remove(old); j.put(new.trim(), o); writeCustom(j)
     }
+    /** Liga/desliga todos os efeitos sem perder o nome do preset ativo. */
+    fun setEnabled(v: Boolean) { val n = activeName; enabled = v; apply(); activeName = n }
+
     fun applyPreset(name: String) {
         val v = PRESETS[name] ?: return
         for (i in 0 until 10) bands[i] = v[i]
         apply()
+        activeName = name
     }
     fun resetAll() {
         restore(JSONObject()); apply()
@@ -263,13 +283,29 @@ object AudioFx {
             writeCustom(mine)
             j.optJSONObject("current")?.let { restore(it); apply() }
             "Backup restaurado: $n presets"
-        } else { restore(j); apply(); "Preset carregado" }
+        } else { restore(j); apply(); activeName = "Importado"; "Preset carregado" }
     } catch (e: Exception) { "Arquivo JSON inválido" }
 
     fun storeAB(slot: Int) { if (slot == 0) abA = snapshot() else abB = snapshot() }
     fun recallAB(slot: Int): Boolean {
         val s = (if (slot == 0) abA else abB) ?: return false
         restore(s); apply(); return true
+    }
+
+    // ---------- Perfil automático por saída (alto-falante, fones com fio, Bluetooth) ----------
+    fun setRouteProfile(route: String, name: String) {
+        routeProfiles[route] = name
+        val j = JSONObject(); routeProfiles.forEach { (k, v) -> j.put(k, v) }
+        prefs?.edit()?.putString("routes", j.toString())?.apply()
+        if (route == currentRoute && name.isNotBlank()) loadCustom(name)
+    }
+
+    /** Chamado quando a saída de áudio muda. Só troca de perfil se a saída realmente mudou. */
+    fun routeChanged(route: String) {
+        if (route == currentRoute) return
+        currentRoute = route
+        val n = routeProfiles[route]
+        if (!n.isNullOrBlank() && customNames.contains(n)) loadCustom(n)
     }
 
     // ---------- Filtros paramétricos ----------
@@ -302,7 +338,8 @@ object AudioFx {
         compOn = compOn, compThr = thr, compRatio = ratio, compAttackMs = attack, compReleaseMs = release,
         compKneeDb = knee, compMakeupDb = makeup, compRms = compRms,
         limOn = limOn, limCeilingDb = limThr, limReleaseMs = limRelease,
-        width = width, crossfeed = crossfeed
+        width = width, crossfeed = crossfeed,
+        truePeak = truePeak, levelerOn = levelerOn, levelerTargetDb = levelerTarget, ditherOn = ditherOn
     )
 
     /** Chamado pelo player quando o id da sessão de áudio muda (efeitos do sistema). */
@@ -324,6 +361,7 @@ object AudioFx {
     }
 
     fun apply() {
+        activeName = "Personalizado"
         save()
         DspEngine.core.params = buildParams()
         try {

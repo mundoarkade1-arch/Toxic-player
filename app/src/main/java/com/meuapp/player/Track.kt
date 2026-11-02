@@ -7,6 +7,9 @@ import android.provider.MediaStore
 /** Valor especial: "todas as músicas". */
 const val ALL_FOLDERS = "__ALL__"
 
+/** Nome da lista de favoritas. */
+const val FAVORITES = "Favoritas"
+
 /** Um grupo da biblioteca. [path] é a chave: "F:pasta", "A:artista" ou "B:álbum". */
 data class Folder(val path: String, val name: String, val count: Int)
 

@@ -120,6 +120,34 @@ class DspCoreTest {
         for (n in 0 until 1000) assertEquals(input[2 * n].toDouble(), out[2 * (n + d)].toDouble(), 1e-5)
     }
 
+    @Test fun truePeakLimitaMaisQueOPicoDeAmostra() {
+        // seno em fs/4 com fase 45 graus: pico de amostra 0,99 mas pico verdadeiro 1,4
+        val n = sr
+        val buf = FloatArray(n * 2)
+        for (i in 0 until n) {
+            val v = (1.4 * sin(2 * PI * 12000.0 * i / sr + PI / 4)).toFloat()
+            buf[2 * i] = v; buf[2 * i + 1] = v
+        }
+        val comTp = run(newCore(DspParams(limOn = true, limCeilingDb = -6f, truePeak = true)), buf)
+        val semTp = run(newCore(DspParams(limOn = true, limCeilingDb = -6f, truePeak = false)), buf)
+        assertTrue("true-peak: ${peakTail(comTp, 4000, 0)}", peakTail(comTp, 4000, 0) < 0.40)
+        assertTrue("amostra: ${peakTail(semTp, 4000, 0)}", peakTail(semTp, 4000, 0) > 0.45)
+    }
+
+    @Test fun niveladorAbaixaMusicaMuitoAlta() {
+        val core = newCore(DspParams(levelerOn = true, levelerTargetDb = -20f, limOn = false))
+        val input = sine(sr * 20, 440.0, 0.5)
+        val out = run(core, input)
+        assertTrue(rmsTail(out, 24000) < rmsTail(input, 24000) * 0.5)
+        assertTrue(core.meters.levGainDb < -6f)
+    }
+
+    @Test fun niveladorDesligadoNaoMudaOGanho() {
+        val core = newCore(DspParams(levelerOn = false, limOn = false))
+        run(core, sine(sr, 440.0, 0.5))
+        assertEquals(0f, core.meters.levGainDb, 1e-6f)
+    }
+
     @Test fun medidorDetectaClipping() {
         val core = newCore(DspParams(preampDb = 12f))
         run(core, sine(sr / 10, 440.0, 0.9))

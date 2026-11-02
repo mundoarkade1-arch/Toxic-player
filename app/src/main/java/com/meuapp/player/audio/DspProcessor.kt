@@ -12,6 +12,7 @@ import java.nio.ByteBuffer
 class DspProcessor(private val core: DspCore) : BaseAudioProcessor() {
     private var tmp = FloatArray(0)
     private var channels = 2
+    private val quantizer = Quantizer()
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         // Outros formatos passam sem processamento (processador inativo) em vez de falhar.
@@ -31,9 +32,9 @@ class DspProcessor(private val core: DspCore) : BaseAudioProcessor() {
         if (tmp.size < samples) tmp = FloatArray(samples)
         for (i in 0 until samples) tmp[i] = inputBuffer.getShort() / 32768f
         core.process(tmp, samples / channels)
-        for (i in 0 until samples) {
-            out.putShort((tmp[i] * 32768f).toInt().coerceIn(-32768, 32767).toShort())
-        }
+        val p = core.params
+        val dither = p.enabled && p.ditherOn
+        for (i in 0 until samples) out.putShort(quantizer.toShort(tmp[i], dither))
         out.flip()
     }
 }
