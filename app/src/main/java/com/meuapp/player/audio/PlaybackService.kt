@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -13,6 +14,9 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.meuapp.player.widget.ToxicWidget
+import com.meuapp.player.widget.WidgetBridge
+import com.meuapp.player.widget.WidgetState
 
 /** Toca em segundo plano (notificação e tela de bloqueio pelo Media3) com o motor de DSP do Toxic Player no pipeline. */
 @OptIn(UnstableApi::class)
@@ -41,10 +45,21 @@ class PlaybackService : MediaSessionService() {
             .build()
         player.addListener(object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) { AudioFx.attach(audioSessionId) }
+            override fun onIsPlayingChanged(isPlaying: Boolean) { updateWidget(player) }
+            override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) { updateWidget(player) }
         })
         AudioFx.attach(player.audioSessionId)
         SleepTimer.attach(player)
+        VolumeManager.attach(player)
+        WidgetBridge.player = player
         session = MediaSession.Builder(this, player).build()
+    }
+
+    private fun updateWidget(p: Player) {
+        WidgetState.title = p.mediaMetadata.title?.toString() ?: "Toxic Player"
+        WidgetState.artist = p.mediaMetadata.artist?.toString() ?: "Toque para abrir"
+        WidgetState.playing = p.isPlaying
+        ToxicWidget.refresh(this)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -58,6 +73,8 @@ class PlaybackService : MediaSessionService() {
         session?.run { player.release(); release() }
         session = null
         SleepTimer.detach()
+        VolumeManager.detach()
+        WidgetBridge.player = null
         AudioFx.release()
         super.onDestroy()
     }

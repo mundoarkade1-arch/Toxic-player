@@ -19,10 +19,10 @@ object SleepTimer {
             val rem = ((end - System.currentTimeMillis()) / 1000).toInt()
             leftSec = rem.coerceAtLeast(0)
             val p = player
-            if (rem <= 8 && p != null) p.volume = (rem / 8f).coerceIn(0f, 1f)   // últimos 8 s: fade-out
+            VolumeManager.sleepFactor = if (rem <= 8) (rem / 8f).coerceIn(0f, 1f) else 1f   // últimos 8 s: fade-out
             if (rem <= 0) {
                 p?.pause()
-                p?.volume = 1f
+                VolumeManager.sleepFactor = 1f
                 leftSec = 0
                 return
             }
@@ -44,6 +44,6 @@ object SleepTimer {
     fun cancel() {
         handler.removeCallbacks(tick)
         leftSec = 0
-        player?.volume = 1f
+        VolumeManager.sleepFactor = 1f
     }
 }

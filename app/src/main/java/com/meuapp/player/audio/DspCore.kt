@@ -14,7 +14,8 @@ data class Meters(
     val rmsL: Float = 0f, val rmsR: Float = 0f,
     val compGrDb: Float = 0f, val limGrDb: Float = 0f,
     val clip: Boolean = false,
-    val levGainDb: Float = 0f
+    val levGainDb: Float = 0f,
+    val mbGrDb: Float = 0f
 )
 
 /** Todos os parâmetros do processamento. Imutável: a interface troca o objeto inteiro. */
@@ -43,8 +44,28 @@ data class DspParams(
     val truePeak: Boolean = true,            // limitador com detecção true-peak aproximada (4x)
     val levelerOn: Boolean = false,          // nivelador de volume (aproxima o volume entre músicas)
     val levelerTargetDb: Float = -16f,
-    val ditherOn: Boolean = true             // dither TPDF na conversão para 16 bits
+    val ditherOn: Boolean = true,            // dither TPDF na conversão para 16 bits
+    val compScHpf: Float = 0f,               // filtro passa-altas no detector do compressor (0 = desligado)
+    val mbOn: Boolean = false,               // compressor multibanda próprio (3 bandas)
+    val mbThrL: Float = -24f, val mbThrM: Float = -24f, val mbThrH: Float = -24f,
+    val mbRatio: Float = 3f, val mbAttackMs: Float = 15f, val mbReleaseMs: Float = 150f,
+    val mbKneeDb: Float = 6f, val mbMakeupDb: Float = 0f,
+    val mbX1: Float = 250f, val mbX2: Float = 3000f
 )
+
+/** Biquad com estado (usado nos cruzamentos do multibanda e no filtro do detector). */
+private class Bq {
+    var c = BiquadCoef.IDENTITY
+    private var z1 = 0.0
+    private var z2 = 0.0
+    fun run(x: Double): Double {
+        val y = c.b0 * x + z1
+        z1 = c.b1 * x - c.a1 * y + z2
+        z2 = c.b2 * x - c.a2 * y
+        return y
+    }
+    fun reset() { z1 = 0.0; z2 = 0.0 }
+}
 
 /** Converte float para 16 bits, com dither TPDF opcional (ruído triangular de ±1 LSB). */
 class Quantizer {
@@ -108,6 +129,11 @@ class DspCore {
             sinc * 0.5 * (1.0 + kotlin.math.cos(PI * d / 4.0))
         }
     }
+    // multibanda: por canal, 12 biquads (LR4 = 2 biquads em cascata): 0-1 LP1, 2-3 HP1, 4-5 LP2, 6-7 HP2, 8-9 LP2 (passa-tudo), 10-11 HP2 (passa-tudo)
+    private val mb = Array(2) { Array(12) { Bq() } }
+    private val sc = Array(2) { Bq() }
+    private val mbPow = DoubleArray(3); private val mbGr = DoubleArray(3)
+    private var mbAtt = 0.0; private var mbRel = 0.0; private var mbWasOn = false
     private var delay = Array(2) { FloatArray(240) }; private var dPos = 0
 
     private val specBuf = FloatArray(SPEC_N)
@@ -124,6 +150,8 @@ class DspCore {
         rmsState = 0.0; grState = 0.0; gLim = 1.0; cfL = 0.0; cfR = 0.0
         levPow = 0.0; levGainDb = 0.0; levGainLin = 1.0; levCount = 0
         histL.fill(0.0); histR.fill(0.0)
+        for (chn in 0 until 2) { for (q in mb[chn]) q.reset(); sc[chn].reset() }
+        mbPow.fill(0.0); mbGr.fill(0.0); mbWasOn = false
         applied = null
     }
 
@@ -166,9 +194,47 @@ class DspCore {
         ceilLin = 10.0.pow(p.limCeilingDb / 20.0)
         cfCoef = 1.0 - exp(-2.0 * PI * 700.0 / sr)
         levCoef = 1.0 - exp(-1.0 / (1.5 * sr))
+        val x1 = p.mbX1.toDouble().coerceIn(40.0, 1000.0)
+        val x2 = max(p.mbX2.toDouble().coerceIn(500.0, 12000.0), x1 * 2.0)
+        val lp1 = BiquadCoef.design(EqFilter(FilterType.LOW_PASS, x1.toFloat(), 0f, 0.7071f), srd)
+        val hp1 = BiquadCoef.design(EqFilter(FilterType.HIGH_PASS, x1.toFloat(), 0f, 0.7071f), srd)
+        val lp2 = BiquadCoef.design(EqFilter(FilterType.LOW_PASS, x2.toFloat(), 0f, 0.7071f), srd)
+        val hp2 = BiquadCoef.design(EqFilter(FilterType.HIGH_PASS, x2.toFloat(), 0f, 0.7071f), srd)
+        for (chn in 0 until 2) {
+            val m = mb[chn]
+            m[0].c = lp1; m[1].c = lp1; m[2].c = hp1; m[3].c = hp1
+            m[4].c = lp2; m[5].c = lp2; m[6].c = hp2; m[7].c = hp2
+            m[8].c = lp2; m[9].c = lp2; m[10].c = hp2; m[11].c = hp2
+        }
+        if (p.mbOn && !mbWasOn) {
+            for (chn in 0 until 2) for (q in mb[chn]) q.reset()
+            mbPow.fill(0.0); mbGr.fill(0.0)
+        }
+        mbWasOn = p.mbOn
+        mbAtt = coefTime(p.mbAttackMs); mbRel = coefTime(p.mbReleaseMs)
+        if (p.compScHpf > 0f) {
+            val hc = BiquadCoef.design(EqFilter(FilterType.HIGH_PASS, p.compScHpf, 0f, 0.7071f), srd)
+            sc[0].c = hc; sc[1].c = hc
+        }
         levAttB = 1.0 - exp(-32.0 / (3.0 * sr))
         levRelB = 1.0 - exp(-32.0 / (8.0 * sr))
         applied = p
+    }
+
+    /** Compressor de uma banda do multibanda: detector RMS ligado nos dois canais, joelho suave. Devolve o ganho linear. */
+    private fun mbGain(b: Int, bl: Double, br: Double, thr: Double, ratio: Double, knee: Double, makeupDb: Double): Double {
+        mbPow[b] += (0.5 * (bl * bl + br * br) - mbPow[b]) * rmsCoef
+        val lvl = 10.0 * log10(max(mbPow[b], 1e-12))
+        val over = lvl - thr
+        val out = when {
+            2.0 * over < -knee -> lvl
+            2.0 * abs(over) <= knee -> lvl + (1.0 / ratio - 1.0) * (over + knee / 2.0).pow(2) / (2.0 * knee)
+            else -> thr + over / ratio
+        }
+        val gr = out - lvl
+        val coef = if (gr < mbGr[b]) mbAtt else mbRel
+        mbGr[b] = gr + coef * (mbGr[b] - gr)
+        return 10.0.pow((mbGr[b] + makeupDb) / 20.0)
     }
 
     /** Processa [frames] quadros de áudio intercalado (L R L R...) em float, no lugar. */
@@ -185,7 +251,9 @@ class DspCore {
         val width = p.width.toDouble()
         val k = 0.5 * p.crossfeed
         var pkL = 0f; var pkR = 0f; var sumL = 0.0; var sumR = 0.0
-        var clip = false; var maxComp = 0.0; var maxLim = 0.0
+        var clip = false; var maxComp = 0.0; var maxLim = 0.0; var maxMb = 0.0
+        val mbRatio = max(p.mbRatio.toDouble(), 1.0)
+        val mbKnee = max(p.mbKneeDb.toDouble(), 0.01)
 
         for (n in 0 until frames) {
             val i0 = n * c
@@ -225,11 +293,13 @@ class DspCore {
                 if (abs(l) >= 1.0 || abs(r) >= 1.0) clip = true
 
                 if (p.compOn) {
+                    val dl: Double; val dr: Double
+                    if (p.compScHpf > 0f) { dl = sc[0].run(l); dr = sc[1].run(r) } else { dl = l; dr = r }
                     val lvl = if (p.compRms) {
-                        rmsState += (0.5 * (l * l + r * r) - rmsState) * rmsCoef
+                        rmsState += (0.5 * (dl * dl + dr * dr) - rmsState) * rmsCoef
                         10.0 * log10(max(rmsState, 1e-12))
                     } else {
-                        20.0 * log10(max(max(abs(l), abs(r)), 1e-6))
+                        20.0 * log10(max(max(abs(dl), abs(dr)), 1e-6))
                     }
                     val over = lvl - thr
                     val out = when {
@@ -245,6 +315,24 @@ class DspCore {
                     if (-grState > maxComp) maxComp = -grState
                 } else {
                     grState = 0.0
+                }
+
+                if (p.mbOn) {
+                    val a = mb[0]; val b = mb[1]
+                    val lRest = a[3].run(a[2].run(l)); val lLow0 = a[1].run(a[0].run(l))
+                    val lMid = a[5].run(a[4].run(lRest)); val lHigh = a[7].run(a[6].run(lRest))
+                    val lLow = a[9].run(a[8].run(lLow0)) + a[11].run(a[10].run(lLow0))
+                    val rRest = b[3].run(b[2].run(r)); val rLow0 = b[1].run(b[0].run(r))
+                    val rMid = b[5].run(b[4].run(rRest)); val rHigh = b[7].run(b[6].run(rRest))
+                    val rLow = b[9].run(b[8].run(rLow0)) + b[11].run(b[10].run(rLow0))
+                    val mk = p.mbMakeupDb.toDouble()
+                    val g0 = mbGain(0, lLow, rLow, p.mbThrL.toDouble(), mbRatio, mbKnee, mk)
+                    val g1 = mbGain(1, lMid, rMid, p.mbThrM.toDouble(), mbRatio, mbKnee, mk)
+                    val g2 = mbGain(2, lHigh, rHigh, p.mbThrH.toDouble(), mbRatio, mbKnee, mk)
+                    l = lLow * g0 + lMid * g1 + lHigh * g2
+                    r = rLow * g0 + rMid * g1 + rHigh * g2
+                    val worst = max(-mbGr[0], max(-mbGr[1], -mbGr[2]))
+                    if (worst > maxMb) maxMb = worst
                 }
 
                 if (c == 2) {
@@ -303,7 +391,7 @@ class DspCore {
             specPos++
         }
         if (frames > 0) {
-            meters = Meters(pkL, pkR, sqrt(sumL / frames).toFloat(), sqrt(sumR / frames).toFloat(), maxComp.toFloat(), maxLim.toFloat(), clip, levGainDb.toFloat())
+            meters = Meters(pkL, pkR, sqrt(sumL / frames).toFloat(), sqrt(sumR / frames).toFloat(), maxComp.toFloat(), maxLim.toFloat(), clip, levGainDb.toFloat(), maxMb.toFloat())
         }
     }
 

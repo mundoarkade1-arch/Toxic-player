@@ -3,7 +3,6 @@ package com.meuapp.player.audio
 import android.content.Context
 import android.content.SharedPreferences
 import android.media.audiofx.BassBoost
-import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
 import androidx.compose.runtime.getValue
@@ -120,7 +119,6 @@ object AudioFx {
   "virt": 0.0
 }"""
 
-    private var dp: DynamicsProcessing? = null
     private var boost: LoudnessEnhancer? = null
     private var bass: BassBoost? = null
     private var virt: Virtualizer? = null
@@ -150,7 +148,17 @@ object AudioFx {
     var limThr by mutableFloatStateOf(-1f)
     var limRelease by mutableFloatStateOf(60f)
     var mbcOn by mutableStateOf(false)
-    var mbcThr by mutableFloatStateOf(-24f)
+    var mbThrL by mutableFloatStateOf(-24f)
+    var mbThrM by mutableFloatStateOf(-24f)
+    var mbThrH by mutableFloatStateOf(-24f)
+    var mbAttack by mutableFloatStateOf(15f)
+    var mbRelease by mutableFloatStateOf(150f)
+    var mbKnee by mutableFloatStateOf(6f)
+    var mbMakeup by mutableFloatStateOf(0f)
+    var mbX1 by mutableFloatStateOf(250f)
+    var mbX2 by mutableFloatStateOf(3000f)
+    var compScHpf by mutableFloatStateOf(0f)
+    var fadeSec by mutableFloatStateOf(0f)
     var mbcRatio by mutableFloatStateOf(3f)
     var truePeak by mutableStateOf(true)
     var levelerOn by mutableStateOf(false)
@@ -175,6 +183,7 @@ object AudioFx {
             // Primeira execução: já deixa o perfil de graves suaves disponível em "Meus perfis"
             try { writeCustom(JSONObject().put("Toxic · Graves Suaves", JSONObject(TOXIC_BASS))) } catch (e: Exception) { }
         }
+        fadeSec = p.getFloat("fade", 0f)
         refreshCustom()
         try {
             val rj = JSONObject(p.getString("routes", "{}") ?: "{}")
@@ -200,7 +209,10 @@ object AudioFx {
         put("att", attack.toDouble()); put("rel", release.toDouble()); put("knee", knee.toDouble())
         put("mk", makeup.toDouble()); put("rms", compRms)
         put("limOn", limOn); put("limThr", limThr.toDouble()); put("limRel", limRelease.toDouble())
-        put("mbcOn", mbcOn); put("mbcThr", mbcThr.toDouble()); put("mbcRatio", mbcRatio.toDouble())
+        put("mbcOn", mbcOn); put("mbcRatio", mbcRatio.toDouble())
+        put("mbL", mbThrL.toDouble()); put("mbM", mbThrM.toDouble()); put("mbH", mbThrH.toDouble())
+        put("mbAtt", mbAttack.toDouble()); put("mbRel", mbRelease.toDouble()); put("mbKnee", mbKnee.toDouble())
+        put("mbMk", mbMakeup.toDouble()); put("mbX1", mbX1.toDouble()); put("mbX2", mbX2.toDouble()); put("scHpf", compScHpf.toDouble())
         put("bass", bassPct.toDouble()); put("virt", virtPct.toDouble())
         put("tp", truePeak); put("lev", levelerOn); put("levT", levelerTarget.toDouble()); put("dith", ditherOn)
     }
@@ -222,7 +234,11 @@ object AudioFx {
         attack = j.f("att", 10f); release = j.f("rel", 120f); knee = j.f("knee", 6f)
         makeup = j.f("mk", 0f); compRms = j.optBoolean("rms", true)
         limOn = j.optBoolean("limOn", true); limThr = j.f("limThr", -1f); limRelease = j.f("limRel", 60f)
-        mbcOn = j.optBoolean("mbcOn", false); mbcThr = j.f("mbcThr", -24f); mbcRatio = j.f("mbcRatio", 3f)
+        mbcOn = j.optBoolean("mbcOn", false); mbcRatio = j.f("mbcRatio", 3f)
+        val oldThr = j.f("mbcThr", -24f)   // perfis antigos tinham um só threshold
+        mbThrL = j.f("mbL", oldThr); mbThrM = j.f("mbM", oldThr); mbThrH = j.f("mbH", oldThr)
+        mbAttack = j.f("mbAtt", 15f); mbRelease = j.f("mbRel", 150f); mbKnee = j.f("mbKnee", 6f)
+        mbMakeup = j.f("mbMk", 0f); mbX1 = j.f("mbX1", 250f); mbX2 = j.f("mbX2", 3000f); compScHpf = j.f("scHpf", 0f)
         bassPct = j.f("bass", 0f); virtPct = j.f("virt", 0f)
         truePeak = j.optBoolean("tp", true); levelerOn = j.optBoolean("lev", false)
         levelerTarget = j.f("levT", -16f); ditherOn = j.optBoolean("dith", true)
@@ -258,13 +274,9 @@ object AudioFx {
         val j = customJson(); val o = j.optJSONObject(old) ?: return
         j.remove(old); j.put(new.trim(), o); writeCustom(j)
     }
+    /** Liga/desliga todos os efeitos sem perder o nome do preset ativo. */
+    fun setFade(v: Float) { fadeSec = v; prefs?.edit()?.putFloat("fade", v)?.apply() }
 
-    /**
-     * Liga/desliga todos os efeitos sem perder o nome do preset ativo.
-     * O @JvmName evita o conflito com o setter `setEnabled(Boolean)` gerado pela propriedade [enabled].
-     * Em Kotlin continua sendo chamado como `AudioFx.setEnabled(...)`.
-     */
-    @JvmName("setAllEffects")
     fun setEnabled(v: Boolean) { val n = activeName; enabled = v; apply(); activeName = n }
 
     fun applyPreset(name: String) {
@@ -345,20 +357,16 @@ object AudioFx {
         compKneeDb = knee, compMakeupDb = makeup, compRms = compRms,
         limOn = limOn, limCeilingDb = limThr, limReleaseMs = limRelease,
         width = width, crossfeed = crossfeed,
-        truePeak = truePeak, levelerOn = levelerOn, levelerTargetDb = levelerTarget, ditherOn = ditherOn
+        truePeak = truePeak, levelerOn = levelerOn, levelerTargetDb = levelerTarget, ditherOn = ditherOn,
+        compScHpf = compScHpf, mbOn = mbcOn, mbThrL = mbThrL, mbThrM = mbThrM, mbThrH = mbThrH,
+        mbRatio = mbcRatio, mbAttackMs = mbAttack, mbReleaseMs = mbRelease, mbKneeDb = mbKnee, mbMakeupDb = mbMakeup,
+        mbX1 = mbX1, mbX2 = mbX2
     )
 
     /** Chamado pelo player quando o id da sessão de áudio muda (efeitos do sistema). */
     fun attach(session: Int) {
         if (session == 0) return
         release()
-        try {
-            val cfg = DynamicsProcessing.Config.Builder(
-                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2,
-                false, 0, true, 3, false, 0, false
-            ).build()
-            dp = DynamicsProcessing(0, session, cfg)
-        } catch (e: Exception) { }
         try { boost = LoudnessEnhancer(session) } catch (e: Exception) { }
         try { bass = BassBoost(0, session) } catch (e: Exception) { }
         try { virt = Virtualizer(0, session) } catch (e: Exception) { }
@@ -370,15 +378,6 @@ object AudioFx {
         activeName = "Personalizado"
         save()
         DspEngine.core.params = buildParams()
-        try {
-            dp?.let { d ->
-                d.setEnabled(enabled && mbcOn)
-                val cuts = floatArrayOf(250f, 3000f, 20000f)
-                for (i in 0 until 3) {
-                    d.setMbcBandAllChannelsTo(i, DynamicsProcessing.MbcBand(mbcOn, cuts[i], 10f, 120f, mbcRatio, mbcThr, 6f, -90f, 1f, 0f, 0f))
-                }
-            }
-        } catch (e: Exception) { }
         try { boost?.let { it.setEnabled(enabled && loudness > 0f); it.setTargetGain((loudness * 100).toInt()) } } catch (e: Exception) { }
         try { bass?.let { it.setEnabled(enabled && bassPct > 0f); it.setStrength((bassPct * 10).toInt().toShort()) } } catch (e: Exception) { }
         try { virt?.let { it.setEnabled(enabled && virtPct > 0f); it.setStrength((virtPct * 10).toInt().toShort()) } } catch (e: Exception) { }
@@ -426,11 +425,10 @@ object AudioFx {
     }
 
     fun release() {
-        try { dp?.release() } catch (e: Exception) { }
         try { boost?.release() } catch (e: Exception) { }
         try { bass?.release() } catch (e: Exception) { }
         try { virt?.release() } catch (e: Exception) { }
-        dp = null; boost = null; bass = null; virt = null
+        boost = null; bass = null; virt = null
         ready = false
     }
 }

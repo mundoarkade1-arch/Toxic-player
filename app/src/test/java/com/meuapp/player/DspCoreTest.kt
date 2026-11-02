@@ -148,6 +148,36 @@ class DspCoreTest {
         assertEquals(0f, core.meters.levGainDb, 1e-6f)
     }
 
+    @Test fun multibandaSemCompressaoMantemOSomPlano() {
+        for (f in listOf(60.0, 1000.0, 3000.0, 8000.0)) {
+            val core = newCore(DspParams(mbOn = true, mbRatio = 1f, mbThrL = -60f, mbThrM = -60f, mbThrH = -60f, limOn = false))
+            val input = sine(sr, f, 0.3)
+            val out = run(core, input)
+            assertEquals("freq $f", 1.0, rmsTail(out, 9600) / rmsTail(input, 9600), 0.02)
+        }
+    }
+
+    @Test fun multibandaComprimeSoABandaDeGraves() {
+        val p = DspParams(mbOn = true, mbThrL = -40f, mbThrM = 0f, mbThrH = 0f, mbRatio = 10f,
+            mbAttackMs = 1f, mbReleaseMs = 50f, mbKneeDb = 0f, limOn = false)
+        val grave = sine(sr, 100.0, 0.5)
+        val agudo = sine(sr, 8000.0, 0.5)
+        val outG = run(newCore(p), grave)
+        val outA = run(newCore(p), agudo)
+        assertTrue(rmsTail(outG, 9600) < rmsTail(grave, 9600) * 0.2)
+        assertEquals(1.0, rmsTail(outA, 9600) / rmsTail(agudo, 9600), 0.03)
+    }
+
+    @Test fun filtroDoDetectorEvitaQueOGraveDisparOCompressor() {
+        val base = DspParams(compOn = true, compThr = -30f, compRatio = 8f, compKneeDb = 0f,
+            compAttackMs = 1f, compReleaseMs = 50f, compRms = false, limOn = false)
+        val input = sine(sr, 60.0, 0.9)
+        val semFiltro = run(newCore(base), input)
+        val comFiltro = run(newCore(base.copy(compScHpf = 500f)), input)
+        assertTrue(rmsTail(semFiltro, 9600) < rmsTail(input, 9600) * 0.5)
+        assertTrue(rmsTail(comFiltro, 9600) > rmsTail(input, 9600) * 0.9)
+    }
+
     @Test fun medidorDetectaClipping() {
         val core = newCore(DspParams(preampDb = 12f))
         run(core, sine(sr / 10, 440.0, 0.9))

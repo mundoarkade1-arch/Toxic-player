@@ -619,7 +619,7 @@ private fun MetersCard() {
         LevelBar((pR + 60f) / 60f, pR > -1f)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("RMS L ${"%.0f".format(toDb(m.rmsL))} · R ${"%.0f".format(toDb(m.rmsR))} dB", fontSize = 11.sp, color = Neon.Dim)
-            Text("Comp -${"%.1f".format(m.compGrDb)} · Lim -${"%.1f".format(m.limGrDb)} · Niv ${"%+.1f".format(m.levGainDb)} dB", fontSize = 11.sp, color = Neon.Dim)
+            Text("Comp -${"%.1f".format(m.compGrDb)} · MB -${"%.1f".format(m.mbGrDb)} · Lim -${"%.1f".format(m.limGrDb)} · Niv ${"%+.1f".format(m.levGainDb)} dB", fontSize = 11.sp, color = Neon.Dim)
         }
     }
 }
@@ -795,6 +795,7 @@ private fun DynSection() {
         SliderRow("Attack", AudioFx.attack, 0.1f..100f, "ms", 1, hint = "Alto preserva o ataque dos graves; baixo segura picos") { AudioFx.attack = it; AudioFx.apply() }
         SliderRow("Release", AudioFx.release, 10f..1000f, "ms", hint = "Alto deixa o som mais contínuo e suave") { AudioFx.release = it; AudioFx.apply() }
         SliderRow("Ganho de compensação", AudioFx.makeup, 0f..18f, "dB", 1, hint = "Devolve o volume perdido na compressão") { AudioFx.makeup = it; AudioFx.apply() }
+        SliderRow("Filtro do detector (sidechain)", AudioFx.compScHpf, 0f..500f, "Hz", 0, hint = "0 = desligado. Impede que os graves disparem a compressão") { AudioFx.compScHpf = it; AudioFx.apply() }
     }
     Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
         SwitchRow("LIMITADOR", "Look-ahead de 5 ms + proteção final no teto", AudioFx.limOn) { AudioFx.limOn = it; AudioFx.apply() }
@@ -803,9 +804,17 @@ private fun DynSection() {
         SliderRow("Release", AudioFx.limRelease, 10f..500f, "ms") { AudioFx.limRelease = it; AudioFx.apply() }
     }
     Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
-        SwitchRow("COMPRESSOR MULTIBANDA (SISTEMA)", "3 bandas; depende do aparelho", AudioFx.mbcOn) { AudioFx.mbcOn = it; AudioFx.apply() }
-        SliderRow("Threshold", AudioFx.mbcThr, -60f..0f, "dB", 1) { AudioFx.mbcThr = it; AudioFx.apply() }
+        SwitchRow("COMPRESSOR MULTIBANDA", "3 bandas (graves, médios, agudos) com cruzamentos Linkwitz-Riley de 4ª ordem", AudioFx.mbcOn) { AudioFx.mbcOn = it; AudioFx.apply() }
+        SliderRow("Cruzamento graves | médios", AudioFx.mbX1, 60f..600f, "Hz", 0, hint = "Abaixo desta frequência fica a banda de graves") { AudioFx.mbX1 = it; AudioFx.apply() }
+        SliderRow("Cruzamento médios | agudos", AudioFx.mbX2, 1500f..8000f, "Hz") { AudioFx.mbX2 = it; AudioFx.apply() }
+        SliderRow("Threshold · graves", AudioFx.mbThrL, -60f..0f, "dB", 1) { AudioFx.mbThrL = it; AudioFx.apply() }
+        SliderRow("Threshold · médios", AudioFx.mbThrM, -60f..0f, "dB", 1) { AudioFx.mbThrM = it; AudioFx.apply() }
+        SliderRow("Threshold · agudos", AudioFx.mbThrH, -60f..0f, "dB", 1) { AudioFx.mbThrH = it; AudioFx.apply() }
         SliderRow("Ratio", AudioFx.mbcRatio, 1f..20f, ": 1", 1) { AudioFx.mbcRatio = it; AudioFx.apply() }
+        SliderRow("Attack", AudioFx.mbAttack, 0.5f..100f, "ms", 1) { AudioFx.mbAttack = it; AudioFx.apply() }
+        SliderRow("Release", AudioFx.mbRelease, 20f..1000f, "ms") { AudioFx.mbRelease = it; AudioFx.apply() }
+        SliderRow("Knee", AudioFx.mbKnee, 0f..24f, "dB", 1) { AudioFx.mbKnee = it; AudioFx.apply() }
+        SliderRow("Ganho de compensação", AudioFx.mbMakeup, 0f..18f, "dB", 1) { AudioFx.mbMakeup = it; AudioFx.apply() }
     }
 }
 
@@ -837,6 +846,10 @@ private fun FxSection(vm: PlayerViewModel) {
         SliderRow("Loudness (volume extra)", AudioFx.loudness, 0f..10f, "dB", 1) { AudioFx.loudness = it; AudioFx.apply() }
         SliderRow("Bass Boost", AudioFx.bassPct, 0f..100f, "%") { AudioFx.bassPct = it; AudioFx.apply() }
         SliderRow("Surround (virtualizador)", AudioFx.virtPct, 0f..100f, "%") { AudioFx.virtPct = it; AudioFx.apply() }
+    }
+    Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
+        Title("TRANSIÇÃO ENTRE MÚSICAS")
+        SliderRow("Fade entre músicas", AudioFx.fadeSec, 0f..8f, "s", 1, hint = "0 = desligado. Escurece o fim e abre o início de cada faixa (sem sobreposição)") { AudioFx.setFade(it) }
     }
     Column(Modifier.fillMaxWidth().glass().padding(16.dp)) {
         Title("VELOCIDADE E TOM")

@@ -1,1 +1,4 @@
-<resources><string name="app_name">Toxic Player</string></resources>
+<resources>
+    <string name="app_name">Toxic Player</string>
+    <string name="widget_desc">Controle o Toxic Player na tela inicial</string>
+</resources>
