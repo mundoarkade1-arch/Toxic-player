@@ -26,7 +26,6 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.meuapp.player.audio.AudioFx
 import com.meuapp.player.audio.PlaybackService
-import com.meuapp.player.youtube.YouTubeStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -121,7 +120,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Conexão com o player ----------
     init {
         AudioFx.init(app)
-        YouTubeStore.init(app)
         loadPlaylists()
         val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
         val future = MediaController.Builder(app, token).buildAsync()
@@ -277,9 +275,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.prepare()
         c.play()
     }
-
-    /** Pausa a música local antes de abrir o YouTube. */
-    fun pauseLocal() { controller?.pause() }
 
     fun toggle() { controller?.let { playError = null; if (it.isPlaying) it.pause() else it.play() } }
     fun next() { controller?.seekToNextMediaItem() }
