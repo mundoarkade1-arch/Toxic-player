@@ -1,6 +1,6 @@
 # Estado do projeto
 
-O diretório Android ativo é `app/` na raiz. O ZIP original também contém uma cópia antiga em `Toxic-player/`, arquivos Kotlin soltos repetidos na raiz e uma cópia avulsa do workflow. Eles foram preservados porque algumas versões diferem; a revisão automática bloqueou a exclusão permanente dessas cópias sem autorização específica. Não abra nem publique a pasta aninhada como versão principal. Os presets, testes, documentação e workflows ativos ficam em seus diretórios normais na raiz.
+O diretório Android ativo é `app/` na raiz. A cópia antiga em `Toxic-player/` foi removida desta revisão após autorização do proprietário. Arquivos Kotlin soltos e uma cópia avulsa do workflow permanecem na raiz como snapshots antigos; não fazem parte da compilação. Os presets, testes, documentação e workflows ativos ficam em seus diretórios normais na raiz.
 
 ## YouTube
 

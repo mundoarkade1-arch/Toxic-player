@@ -2,7 +2,7 @@
 
 Aplicativo Android de música com busca principal no YouTube e player local com controles e efeitos de áudio.
 
-> Abra a pasta raiz deste projeto no Android Studio. A pasta `app/` na raiz é a versão ativa. O ZIP original também contém uma cópia antiga dentro de `Toxic-player/` e arquivos Kotlin soltos; eles foram preservados para evitar apagar versões que podem conter trabalho diferente.
+> No GitHub, a pasta `app/` da raiz é a versão ativa. Os arquivos Kotlin soltos na raiz são snapshots antigos e não fazem parte da compilação.
 
 ## YouTube e YouTube Premium
 
