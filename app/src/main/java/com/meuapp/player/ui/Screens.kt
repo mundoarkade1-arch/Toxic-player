@@ -3,6 +3,9 @@ package com.meuapp.player.ui
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -15,17 +18,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
 import java.net.URL
 import com.meuapp.player.youtube.YouTubeApi
 import com.meuapp.player.youtube.YouTubeLinks
-import com.meuapp.player.youtube.YouTubeState
 import com.meuapp.player.youtube.YouTubeStore
 import com.meuapp.player.youtube.YtResult
 import com.meuapp.player.youtube.YtSearch
+import com.meuapp.player.youtube.YtSearchType
 import com.meuapp.player.youtube.YtTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -70,7 +70,7 @@ import kotlin.math.pow
 // ───────────── Estrutura principal + navegação ─────────────
 @Composable
 fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
-    var tab by remember { mutableIntStateOf(1) }
+    var tab by remember { mutableIntStateOf(0) }
     val bg by rememberCover(vm.currentTrack, 48)
     val target = bg?.let { lerp(Neon.Glow, Color(CoverLoader.averageColor(it)), 0.5f) } ?: Neon.Glow
     val glowColor by animateColorAsState(target, tween(700), label = "glow")
@@ -80,11 +80,10 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
             title = { Text("Bem-vindo ao Toxic Player") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("• Biblioteca: pastas, artistas, álbuns, listas e busca.")
-                    Text("• Player: toque no chip \"Efeitos\" para ouvir com e sem o preset.")
-                    Text("• Mesa: EQ, compressor, limitador e estéreo. Toque no número de um controle para digitar o valor exato.")
-                    Text("• Presets: importe AutoEQ/APO e escolha um perfil automático para fones, Bluetooth e alto-falante.")
-                    Text("• Fila e Timer para dormir ficam no Player.")
+                    Text("• YouTube: busque vídeos e playlists públicas. A reprodução abre no app oficial do YouTube.")
+                    Text("• Para usar o Premium, entre na sua conta dentro do app oficial do YouTube.")
+                    Text("• Biblioteca: músicas salvas no celular. A permissão só será solicitada ao abrir essa seção.")
+                    Text("• Player e Mesa: controles e ajustes de áudio para músicas locais.")
                 }
             },
             confirmButton = { TextButton(onClick = { vm.dismissTips() }) { Text("Entendi", color = Neon.Green) } }
@@ -92,16 +91,17 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
     }
     Scaffold(
         containerColor = Neon.Bg,
-        bottomBar = { NavBar(tab, vm.update != null) { tab = it } }
+            bottomBar = { NavBar(tab, vm.update != null) { tab = it } }
     ) { pad ->
         Box(
             Modifier.padding(pad).fillMaxSize().clipToBounds()
                 .background(Brush.verticalGradient(listOf(glowColor, Neon.Bg), endY = 1300f))
         ) {
             when (tab) {
-                0 -> LibraryScreen(vm, granted, askPerm) { tab = 1 }
-                1 -> PlayerScreen(vm)
-                2 -> MesaScreen(vm)
+                0 -> YouTubeLibrary(vm)
+                1 -> LibraryScreen(vm, granted, askPerm) { tab = 2 }
+                2 -> PlayerScreen(vm)
+                3 -> MesaScreen(vm)
                 else -> UpdateScreen(vm)
             }
         }
@@ -111,10 +111,11 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
 @Composable
 private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
     val items = listOf(
-        Triple("Biblioteca", Icons.Rounded.LibraryMusic, 0),
-        Triple("Player", Icons.Rounded.GraphicEq, 1),
-        Triple("Mesa", Icons.Rounded.Tune, 2),
-        Triple("Atualizar", Icons.Rounded.SystemUpdate, 3)
+        Triple("YouTube", Icons.Rounded.Search, 0),
+        Triple("Biblioteca", Icons.Rounded.LibraryMusic, 1),
+        Triple("Player", Icons.Rounded.GraphicEq, 2),
+        Triple("Áudio", Icons.Rounded.Tune, 3),
+        Triple("Atualizar", Icons.Rounded.SystemUpdate, 4)
     )
     Row(Modifier.fillMaxWidth().padding(16.dp).glass(30.dp).padding(6.dp)) {
         items.forEach { (label, icon, i) ->
@@ -127,7 +128,7 @@ private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
             ) {
                 Box {
                     Icon(icon, null, tint = if (sel) Neon.Green else Neon.Dim, modifier = Modifier.size(24.dp))
-                    if (i == 3 && hasUpdate) Box(Modifier.size(8.dp).clip(CircleShape).background(Neon.Green).align(Alignment.TopEnd))
+                    if (i == 4 && hasUpdate) Box(Modifier.size(8.dp).clip(CircleShape).background(Neon.Green).align(Alignment.TopEnd))
                 }
                 Text(label, fontSize = 10.sp, color = if (sel) Neon.Green else Neon.Dim)
             }
@@ -189,7 +190,6 @@ private fun Title(text: String) = Text(text, fontSize = 12.sp, letterSpacing = 2
 fun PlayerScreen(vm: PlayerViewModel) {
     var showQueue by remember { mutableStateOf(false) }
     var showTimer by remember { mutableStateOf(false) }
-    if (YouTubeState.url != null) { YouTubePlayerScreen(); return }
     Box(Modifier.fillMaxSize()) {
         if (showQueue) QueueDialog(vm) { showQueue = false }
         if (showTimer) TimerDialog { showTimer = false }
@@ -416,13 +416,8 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
         Chip("Artistas", vm.libMode == 1) { vm.changeLibMode(1) }
         Chip("Álbuns", vm.libMode == 2) { vm.changeLibMode(2) }
         Chip("Listas", vm.libMode == 3) { vm.changeLibMode(3) }
-        Chip("YouTube", vm.libMode == 4) { vm.changeLibMode(4) }
     }
     Spacer(Modifier.height(10.dp))
-    if (vm.libMode == 4) {
-        YouTubeLibrary(vm, goPlayer)
-        return
-    }
     if (vm.libMode == 3) {
         GhostButton("Criar lista", Modifier.fillMaxWidth()) { newListDialog = true }
         Spacer(Modifier.height(10.dp))
@@ -993,64 +988,37 @@ fun UpdateScreen(vm: PlayerViewModel) {
 }
 
 
-// ───────────── YouTube (player oficial embutido) ─────────────
-/** Player oficial do YouTube dentro de uma WebView. Fica visível e para quando sai da tela. */
-@Composable
-private fun YouTubePane(url: String, referer: String, modifier: Modifier) {
-    DisposableEffect(Unit) { onDispose { YouTubeState.stop() } }
-    AndroidView(
-        modifier = modifier,
-        factory = { ctx ->
-            WebView(ctx).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.mediaPlaybackRequiresUserGesture = false
-                webViewClient = WebViewClient()
-                setBackgroundColor(android.graphics.Color.BLACK)
-                tag = url
-                loadUrl(url, mapOf("Referer" to referer))
-            }
-        },
-        update = { wv ->
-            if (wv.tag != url) { wv.tag = url; wv.loadUrl(url, mapOf("Referer" to referer)) }
-        },
-        onRelease = { wv -> wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() }
-    )
-}
-
-@Composable
-private fun YouTubePlayerScreen() {
-    val url = YouTubeState.url ?: return
-    Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
-    ) {
-        Text("YOUTUBE", color = Neon.Green, fontSize = 12.sp, letterSpacing = 4.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(16.dp))
-        Box(
-            Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(20.dp))
-                .background(Color.Black).border(1.dp, Neon.Border, RoundedCornerShape(20.dp))
-        ) { YouTubePane(url, YouTubeState.referer, Modifier.fillMaxSize()) }
-        Spacer(Modifier.height(16.dp))
-        Text(YouTubeState.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-        Text(
-            "O vídeo precisa ficar visível e para quando você sai desta tela ou do app (regra do YouTube). " +
-                "Os efeitos da Mesa não se aplicam ao áudio do YouTube. Se o vídeo não abrir, o dono bloqueou o uso fora do YouTube.",
-            fontSize = 11.sp, color = Neon.Dim, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 12.dp)
-        )
-        GhostButton("Parar e voltar ao player local", Modifier.fillMaxWidth()) { YouTubeState.stop() }
-    }
-}
-
 @Composable
 private fun rememberRemoteImage(url: String): State<Bitmap?> = produceState<Bitmap?>(null, url) {
     value = if (url.isBlank()) null else withContext(Dispatchers.IO) {
-        try { URL(url).openStream().use { BitmapFactory.decodeStream(it) } } catch (e: Exception) { null }
+        try {
+            val connection = URL(url).openConnection() as java.net.HttpURLConnection
+            try {
+                connection.connectTimeout = 5_000
+                connection.readTimeout = 5_000
+                connection.inputStream.use { BitmapFactory.decodeStream(it) }
+            } finally { connection.disconnect() }
+        } catch (e: Exception) { null }
+    }
+}
+
+private fun openYouTubeUrl(context: android.content.Context, url: String): String? {
+    val uri = Uri.parse(url)
+    return try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.youtube"))
+        null
+    } catch (_: ActivityNotFoundException) {
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+            "O app do YouTube não está instalado; o link foi aberto no navegador."
+        } catch (_: ActivityNotFoundException) {
+            "Não foi possível abrir o link. Instale o YouTube ou um navegador."
+        }
     }
 }
 
 @Composable
-private fun YouTubeLibrary(vm: PlayerViewModel, goPlayer: () -> Unit) {
+private fun YouTubeLibrary(vm: PlayerViewModel) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var link by remember { mutableStateOf("") }
@@ -1060,25 +1028,89 @@ private fun YouTubeLibrary(vm: PlayerViewModel, goPlayer: () -> Unit) {
     var keyField by remember { mutableStateOf("") }
     var searchMsg by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
+    var searchType by remember { mutableStateOf(YtSearchType.VIDEOS) }
     var results by remember { mutableStateOf<List<YtResult>>(emptyList()) }
-    val referer = "https://" + ctx.packageName
 
-    fun open(t: YtTarget, title: String) {
+    fun open(t: YtTarget) {
+        val url = YouTubeLinks.externalUrl(t)
+        if (url == null) { msg = "Esse resultado não tem um link válido."; return }
         vm.pauseLocal()
-        YouTubeState.play(t, title, referer)
-        goPlayer()
+        msg = openYouTubeUrl(ctx, url).orEmpty()
     }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Column(Modifier.fillMaxWidth().glass().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Title("COLAR LINK")
+                Title("BUSCAR NO YOUTUBE")
+                Text("Pesquise vídeos de música ou playlists públicas. A chave de API é só para busca; o Premium usa a conta do app oficial.", fontSize = 12.sp, color = Neon.Dim)
+                if (YouTubeStore.apiKey.isBlank()) {
+                    Text(
+                        "Para habilitar a busca, crie uma chave no Google Cloud Console, ative YouTube Data API v3 e restrinja a chave ao app e à API. A cota padrão de busca é limitada.",
+                        fontSize = 11.sp, color = Neon.Dim
+                    )
+                    OutlinedTextField(value = keyField, onValueChange = { keyField = it }, singleLine = true, label = { Text("Chave da API") }, modifier = Modifier.fillMaxWidth())
+                    GhostButton("Abrir configuração da API", Modifier.fillMaxWidth()) {
+                        runCatching {
+                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://console.cloud.google.com/apis/library/youtube.googleapis.com")))
+                        }.onFailure { searchMsg = "Não foi possível abrir o navegador." }
+                    }
+                    GhostButton("Salvar chave", Modifier.fillMaxWidth()) {
+                        if (keyField.isBlank()) searchMsg = "Cole uma chave de API para continuar."
+                        else { YouTubeStore.setKey(keyField); keyField = ""; searchMsg = "Chave salva neste aparelho." }
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Chip("Músicas e vídeos", searchType == YtSearchType.VIDEOS) { searchType = YtSearchType.VIDEOS; results = emptyList(); searchMsg = "" }
+                        Chip("Playlists", searchType == YtSearchType.PLAYLISTS) { searchType = YtSearchType.PLAYLISTS; results = emptyList(); searchMsg = "" }
+                    }
+                    OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true, label = { Text(if (searchType == YtSearchType.VIDEOS) "Buscar música ou artista" else "Buscar playlist") }, modifier = Modifier.fillMaxWidth())
+                    GhostButton(if (searching) "Buscando..." else "Buscar", Modifier.fillMaxWidth()) {
+                        if (!searching && query.isNotBlank()) {
+                            searching = true; searchMsg = ""
+                            scope.launch {
+                                when (val r = YouTubeApi.search(YouTubeStore.apiKey, query, searchType)) {
+                                    is YtSearch.Ok -> { results = r.items; if (r.items.isEmpty()) searchMsg = "Nada encontrado" }
+                                    is YtSearch.Error -> searchMsg = r.message
+                                }
+                                searching = false
+                            }
+                        }
+                    }
+                    Text("Trocar chave da API", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.clickable { YouTubeStore.setKey(""); results = emptyList(); searchMsg = "" }.padding(vertical = 4.dp))
+                    if (searchMsg.isNotEmpty()) Text(searchMsg, fontSize = 12.sp, color = Neon.Dim)
+                }
+            }
+        }
+        items(results) { r ->
+            Row(
+                Modifier.fillMaxWidth().glass(16.dp).clickable { open(r.target) }.padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val th by rememberRemoteImage(r.thumb)
+                Box(Modifier.size(96.dp, 54.dp).clip(RoundedCornerShape(10.dp)).background(Neon.Glass), contentAlignment = Alignment.Center) {
+                    val tb = th
+                    if (tb != null) Image(tb.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    else Icon(Icons.Rounded.PlayArrow, null, tint = Neon.Dim)
+                }
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text(r.title, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text((if (r.target.playlistId != null) "Playlist · " else "Vídeo · ") + r.channel, fontSize = 11.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        item {
+            Column(Modifier.fillMaxWidth().glass().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Title("ABRIR VÍDEO OU PLAYLIST")
+                Text("A reprodução abre no YouTube oficial. Entre na sua conta Premium nesse app.", fontSize = 12.sp, color = Neon.Dim)
+                GhostButton("Minhas playlists no YouTube", Modifier.fillMaxWidth()) {
+                    msg = openYouTubeUrl(ctx, "https://www.youtube.com/feed/playlists").orEmpty()
+                }
                 OutlinedTextField(value = link, onValueChange = { link = it }, singleLine = true, label = { Text("Link de vídeo ou playlist") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("Nome (opcional, para salvar)") }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GhostButton("Tocar", Modifier.weight(1f)) {
+                    GhostButton("Abrir no YouTube", Modifier.weight(1f)) {
                         val t = YouTubeLinks.parse(link)
-                        if (t == null) msg = "Link não reconhecido" else { msg = ""; open(t, name.ifBlank { link.trim() }) }
+                        if (t == null) msg = "Link não reconhecido" else open(t)
                     }
                     GhostButton("Salvar", Modifier.weight(1f)) {
                         if (YouTubeLinks.parse(link) == null) msg = "Link não reconhecido"
@@ -1093,7 +1125,7 @@ private fun YouTubeLibrary(vm: PlayerViewModel, goPlayer: () -> Unit) {
             items(YouTubeStore.links.toList()) { s ->
                 Row(
                     Modifier.fillMaxWidth().glass(16.dp)
-                        .clickable { YouTubeLinks.parse(s.input)?.let { open(it, s.title) } }.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+                        .clickable { YouTubeLinks.parse(s.input)?.let { open(it) } }.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Rounded.PlayArrow, null, tint = Neon.Green)
@@ -1102,51 +1134,6 @@ private fun YouTubeLibrary(vm: PlayerViewModel, goPlayer: () -> Unit) {
                 }
             }
         }
-        item {
-            Column(Modifier.fillMaxWidth().glass().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Title("BUSCAR NO YOUTUBE")
-                if (YouTubeStore.apiKey.isBlank()) {
-                    Text(
-                        "A busca usa a sua própria chave gratuita da YouTube Data API: no Google Cloud Console, ative \"YouTube Data API v3\" e crie uma chave em Credenciais. A chave fica só neste aparelho.",
-                        fontSize = 11.sp, color = Neon.Dim
-                    )
-                    OutlinedTextField(value = keyField, onValueChange = { keyField = it }, singleLine = true, label = { Text("Chave da API") }, modifier = Modifier.fillMaxWidth())
-                    GhostButton("Salvar chave", Modifier.fillMaxWidth()) { YouTubeStore.setKey(keyField); keyField = "" }
-                } else {
-                    OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true, label = { Text("Buscar músicas") }, modifier = Modifier.fillMaxWidth())
-                    GhostButton(if (searching) "Buscando..." else "Buscar", Modifier.fillMaxWidth()) {
-                        if (!searching && query.isNotBlank()) {
-                            searching = true; searchMsg = ""
-                            scope.launch {
-                                when (val r = YouTubeApi.search(YouTubeStore.apiKey, query)) {
-                                    is YtSearch.Ok -> { results = r.items; if (r.items.isEmpty()) searchMsg = "Nada encontrado" }
-                                    is YtSearch.Error -> searchMsg = r.message
-                                }
-                                searching = false
-                            }
-                        }
-                    }
-                    Text("Trocar chave da API", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.clickable { YouTubeStore.setKey("") }.padding(vertical = 4.dp))
-                    if (searchMsg.isNotEmpty()) Text(searchMsg, fontSize = 12.sp, color = Neon.Dim)
-                }
-            }
-        }
-        items(results) { r ->
-            Row(
-                Modifier.fillMaxWidth().glass(16.dp).clickable { open(YtTarget(r.videoId, null), r.title) }.padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val th by rememberRemoteImage(r.thumb)
-                Box(Modifier.size(96.dp, 54.dp).clip(RoundedCornerShape(10.dp)).background(Neon.Glass), contentAlignment = Alignment.Center) {
-                    val tb = th
-                    if (tb != null) Image(tb.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    else Icon(Icons.Rounded.PlayArrow, null, tint = Neon.Dim)
-                }
-                Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                    Text(r.title, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(r.channel, fontSize = 11.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-        }
     }
 }
+

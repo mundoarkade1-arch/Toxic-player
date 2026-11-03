@@ -26,7 +26,6 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.meuapp.player.audio.AudioFx
 import com.meuapp.player.audio.PlaybackService
-import com.meuapp.player.youtube.YouTubeState
 import com.meuapp.player.youtube.YouTubeStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -54,7 +53,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // Biblioteca
     var openFolder by mutableStateOf<String?>(null); private set
-    var libMode by mutableIntStateOf(0); private set      // 0 pastas, 1 artistas, 2 álbuns
+    var libMode by mutableIntStateOf(0); private set      // 0 pastas, 1 artistas, 2 álbuns, 3 listas
     var query by mutableStateOf(""); private set
     var sortMode by mutableIntStateOf(0); private set     // 0 título, 1 artista, 2 duração
 
@@ -272,7 +271,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     /** Toca uma lista (por exemplo, só as músicas de uma pasta) a partir de [index]. */
     fun playList(list: List<Track>, index: Int) {
         val c = controller ?: return
-        YouTubeState.stop()
         playError = null
         saveQueue(list)
         c.setMediaItems(list.map { mediaItem(it) }, index, 0L)
@@ -280,7 +278,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.play()
     }
 
-    /** Pausa a música local (usado ao abrir um vídeo do YouTube). */
+    /** Pausa a música local antes de abrir o YouTube. */
     fun pauseLocal() { controller?.pause() }
 
     fun toggle() { controller?.let { playError = null; if (it.isPlaying) it.pause() else it.play() } }
@@ -446,3 +444,4 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         super.onCleared()
     }
 }
+
