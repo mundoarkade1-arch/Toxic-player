@@ -9,21 +9,6 @@ import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** O que está tocando no player embutido do YouTube. Quando [url] é nulo, o YouTube está parado. */
-object YouTubeState {
-    var url by mutableStateOf<String?>(null); private set
-    var referer by mutableStateOf("https://com.meuapp.player"); private set
-    var title by mutableStateOf(""); private set
-
-    fun play(target: YtTarget, title: String, referer: String) {
-        this.referer = referer
-        this.title = title
-        url = YouTubeLinks.embedUrl(target, referer)
-    }
-
-    fun stop() { url = null; title = "" }
-}
-
 /** Links salvos e chave da API (ficam só neste aparelho). */
 object YouTubeStore {
     private var prefs: SharedPreferences? = null
@@ -54,3 +39,4 @@ object YouTubeStore {
     fun addLink(title: String, input: String) { links.add(YtSaved(title.ifBlank { input }, input)); persist() }
     fun removeLink(s: YtSaved) { links.remove(s); persist() }
 }
+
