@@ -23,7 +23,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         vmRef?.savePos()   // guarda faixa e ponto atual para continuar depois
-        com.meuapp.player.youtube.YouTubeState.stop()   // regra do YouTube: o vídeo não toca em segundo plano
         super.onStop()
     }
 
@@ -39,20 +38,13 @@ class MainActivity : ComponentActivity() {
                 var granted by remember {
                     mutableStateOf(ContextCompat.checkSelfPermission(this, audioPerm) == PackageManager.PERMISSION_GRANTED)
                 }
-                val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
-                    granted = r[audioPerm] == true || granted
-                    if (granted) vm.loadTracks()
+                val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+                    granted = allowed || granted
                 }
-                LaunchedEffect(Unit) {
-                    val perms = mutableListOf(audioPerm)
-                    if (Build.VERSION.SDK_INT >= 33) perms += Manifest.permission.POST_NOTIFICATIONS
-                    if (granted) {
-                        vm.loadTracks()
-                        if (Build.VERSION.SDK_INT >= 33) launcher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
-                    } else launcher.launch(perms.toTypedArray())
-                }
-                App(vm, granted) { launcher.launch(arrayOf(audioPerm)) }
+                LaunchedEffect(granted) { if (granted) vm.loadTracks() }
+                App(vm, granted) { if (!granted) launcher.launch(audioPerm) }
             }
         }
     }
 }
+
