@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         vmRef?.savePos()   // guarda faixa e ponto atual para continuar depois
+        com.meuapp.player.youtube.YouTubeState.stop()   // regra do YouTube: o vídeo não toca em segundo plano
         super.onStop()
     }
 

@@ -14,6 +14,19 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.launch
+import java.net.URL
+import com.meuapp.player.youtube.YouTubeApi
+import com.meuapp.player.youtube.YouTubeLinks
+import com.meuapp.player.youtube.YouTubeState
+import com.meuapp.player.youtube.YouTubeStore
+import com.meuapp.player.youtube.YtResult
+import com.meuapp.player.youtube.YtSearch
+import com.meuapp.player.youtube.YtTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.meuapp.player.CoverLoader
@@ -176,6 +189,7 @@ private fun Title(text: String) = Text(text, fontSize = 12.sp, letterSpacing = 2
 fun PlayerScreen(vm: PlayerViewModel) {
     var showQueue by remember { mutableStateOf(false) }
     var showTimer by remember { mutableStateOf(false) }
+    if (YouTubeState.url != null) { YouTubePlayerScreen(); return }
     Box(Modifier.fillMaxSize()) {
         if (showQueue) QueueDialog(vm) { showQueue = false }
         if (showTimer) TimerDialog { showTimer = false }
@@ -402,8 +416,13 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
         Chip("Artistas", vm.libMode == 1) { vm.changeLibMode(1) }
         Chip("Álbuns", vm.libMode == 2) { vm.changeLibMode(2) }
         Chip("Listas", vm.libMode == 3) { vm.changeLibMode(3) }
+        Chip("YouTube", vm.libMode == 4) { vm.changeLibMode(4) }
     }
     Spacer(Modifier.height(10.dp))
+    if (vm.libMode == 4) {
+        YouTubeLibrary(vm, goPlayer)
+        return
+    }
     if (vm.libMode == 3) {
         GhostButton("Criar lista", Modifier.fillMaxWidth()) { newListDialog = true }
         Spacer(Modifier.height(10.dp))
@@ -969,6 +988,165 @@ fun UpdateScreen(vm: PlayerViewModel) {
             }
             if (vm.update != null) PrimaryButton(if (vm.busy) "Aguarde..." else "Baixar e instalar") { vm.installUpdate() }
             else PrimaryButton(if (vm.busy) "Verificando..." else "Verificar agora") { vm.checkUpdate(true) }
+        }
+    }
+}
+
+
+// ───────────── YouTube (player oficial embutido) ─────────────
+/** Player oficial do YouTube dentro de uma WebView. Fica visível e para quando sai da tela. */
+@Composable
+private fun YouTubePane(url: String, referer: String, modifier: Modifier) {
+    DisposableEffect(Unit) { onDispose { YouTubeState.stop() } }
+    AndroidView(
+        modifier = modifier,
+        factory = { ctx ->
+            WebView(ctx).apply {
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.mediaPlaybackRequiresUserGesture = false
+                webViewClient = WebViewClient()
+                setBackgroundColor(android.graphics.Color.BLACK)
+                tag = url
+                loadUrl(url, mapOf("Referer" to referer))
+            }
+        },
+        update = { wv ->
+            if (wv.tag != url) { wv.tag = url; wv.loadUrl(url, mapOf("Referer" to referer)) }
+        },
+        onRelease = { wv -> wv.stopLoading(); wv.loadUrl("about:blank"); wv.destroy() }
+    )
+}
+
+@Composable
+private fun YouTubePlayerScreen() {
+    val url = YouTubeState.url ?: return
+    Column(
+        Modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+    ) {
+        Text("YOUTUBE", color = Neon.Green, fontSize = 12.sp, letterSpacing = 4.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(16.dp))
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(20.dp))
+                .background(Color.Black).border(1.dp, Neon.Border, RoundedCornerShape(20.dp))
+        ) { YouTubePane(url, YouTubeState.referer, Modifier.fillMaxSize()) }
+        Spacer(Modifier.height(16.dp))
+        Text(YouTubeState.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        Text(
+            "O vídeo precisa ficar visível e para quando você sai desta tela ou do app (regra do YouTube). " +
+                "Os efeitos da Mesa não se aplicam ao áudio do YouTube. Se o vídeo não abrir, o dono bloqueou o uso fora do YouTube.",
+            fontSize = 11.sp, color = Neon.Dim, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 12.dp)
+        )
+        GhostButton("Parar e voltar ao player local", Modifier.fillMaxWidth()) { YouTubeState.stop() }
+    }
+}
+
+@Composable
+private fun rememberRemoteImage(url: String): State<Bitmap?> = produceState<Bitmap?>(null, url) {
+    value = if (url.isBlank()) null else withContext(Dispatchers.IO) {
+        try { URL(url).openStream().use { BitmapFactory.decodeStream(it) } } catch (e: Exception) { null }
+    }
+}
+
+@Composable
+private fun YouTubeLibrary(vm: PlayerViewModel, goPlayer: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var link by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var msg by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf("") }
+    var keyField by remember { mutableStateOf("") }
+    var searchMsg by remember { mutableStateOf("") }
+    var searching by remember { mutableStateOf(false) }
+    var results by remember { mutableStateOf<List<YtResult>>(emptyList()) }
+    val referer = "https://" + ctx.packageName
+
+    fun open(t: YtTarget, title: String) {
+        vm.pauseLocal()
+        YouTubeState.play(t, title, referer)
+        goPlayer()
+    }
+
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Column(Modifier.fillMaxWidth().glass().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Title("COLAR LINK")
+                OutlinedTextField(value = link, onValueChange = { link = it }, singleLine = true, label = { Text("Link de vídeo ou playlist") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true, label = { Text("Nome (opcional, para salvar)") }, modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GhostButton("Tocar", Modifier.weight(1f)) {
+                        val t = YouTubeLinks.parse(link)
+                        if (t == null) msg = "Link não reconhecido" else { msg = ""; open(t, name.ifBlank { link.trim() }) }
+                    }
+                    GhostButton("Salvar", Modifier.weight(1f)) {
+                        if (YouTubeLinks.parse(link) == null) msg = "Link não reconhecido"
+                        else { YouTubeStore.addLink(name, link.trim()); msg = "Link salvo"; link = ""; name = "" }
+                    }
+                }
+                if (msg.isNotEmpty()) Text(msg, fontSize = 12.sp, color = Neon.Dim)
+            }
+        }
+        if (YouTubeStore.links.isNotEmpty()) {
+            item { Title("MEUS LINKS") }
+            items(YouTubeStore.links.toList()) { s ->
+                Row(
+                    Modifier.fillMaxWidth().glass(16.dp)
+                        .clickable { YouTubeLinks.parse(s.input)?.let { open(it, s.title) } }.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Rounded.PlayArrow, null, tint = Neon.Green)
+                    Text(s.title, Modifier.weight(1f).padding(horizontal = 10.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("Apagar", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.clickable { YouTubeStore.removeLink(s) }.padding(10.dp))
+                }
+            }
+        }
+        item {
+            Column(Modifier.fillMaxWidth().glass().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Title("BUSCAR NO YOUTUBE")
+                if (YouTubeStore.apiKey.isBlank()) {
+                    Text(
+                        "A busca usa a sua própria chave gratuita da YouTube Data API: no Google Cloud Console, ative \"YouTube Data API v3\" e crie uma chave em Credenciais. A chave fica só neste aparelho.",
+                        fontSize = 11.sp, color = Neon.Dim
+                    )
+                    OutlinedTextField(value = keyField, onValueChange = { keyField = it }, singleLine = true, label = { Text("Chave da API") }, modifier = Modifier.fillMaxWidth())
+                    GhostButton("Salvar chave", Modifier.fillMaxWidth()) { YouTubeStore.setKey(keyField); keyField = "" }
+                } else {
+                    OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true, label = { Text("Buscar músicas") }, modifier = Modifier.fillMaxWidth())
+                    GhostButton(if (searching) "Buscando..." else "Buscar", Modifier.fillMaxWidth()) {
+                        if (!searching && query.isNotBlank()) {
+                            searching = true; searchMsg = ""
+                            scope.launch {
+                                when (val r = YouTubeApi.search(YouTubeStore.apiKey, query)) {
+                                    is YtSearch.Ok -> { results = r.items; if (r.items.isEmpty()) searchMsg = "Nada encontrado" }
+                                    is YtSearch.Error -> searchMsg = r.message
+                                }
+                                searching = false
+                            }
+                        }
+                    }
+                    Text("Trocar chave da API", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.clickable { YouTubeStore.setKey("") }.padding(vertical = 4.dp))
+                    if (searchMsg.isNotEmpty()) Text(searchMsg, fontSize = 12.sp, color = Neon.Dim)
+                }
+            }
+        }
+        items(results) { r ->
+            Row(
+                Modifier.fillMaxWidth().glass(16.dp).clickable { open(YtTarget(r.videoId, null), r.title) }.padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val th by rememberRemoteImage(r.thumb)
+                Box(Modifier.size(96.dp, 54.dp).clip(RoundedCornerShape(10.dp)).background(Neon.Glass), contentAlignment = Alignment.Center) {
+                    val tb = th
+                    if (tb != null) Image(tb.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    else Icon(Icons.Rounded.PlayArrow, null, tint = Neon.Dim)
+                }
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text(r.title, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(r.channel, fontSize = 11.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
     }
 }
