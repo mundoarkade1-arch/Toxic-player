@@ -277,7 +277,7 @@ object AudioFx {
     /** Liga/desliga todos os efeitos sem perder o nome do preset ativo. */
     fun setFade(v: Float) { fadeSec = v; prefs?.edit()?.putFloat("fade", v)?.apply() }
 
-    fun setEnabled(v: Boolean) { val n = activeName; enabled = v; apply(); activeName = n }
+    fun setMasterEnabled(v: Boolean) { val n = activeName; enabled = v; apply(); activeName = n }
 
     fun applyPreset(name: String) {
         val v = PRESETS[name] ?: return

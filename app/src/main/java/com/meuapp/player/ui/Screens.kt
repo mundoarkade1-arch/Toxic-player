@@ -195,7 +195,7 @@ fun PlayerScreen(vm: PlayerViewModel) {
             }
             LiveSpectrum(vm.isPlaying)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip(if (AudioFx.enabled) "Efeitos: ${AudioFx.activeName}" else "Efeitos desligados", AudioFx.enabled) { AudioFx.setEnabled(!AudioFx.enabled) }
+                Chip(if (AudioFx.enabled) "Efeitos: ${AudioFx.activeName}" else "Efeitos desligados", AudioFx.enabled) { AudioFx.setMasterEnabled(!AudioFx.enabled) }
                 Chip("Fila (${vm.queue.size})") { showQueue = true }
                 Chip(if (SleepTimer.leftSec > 0) "Timer ${SleepTimer.leftSec / 60 + 1} min" else "Timer") { showTimer = true }
             }
@@ -552,7 +552,7 @@ fun MesaScreen(vm: PlayerViewModel) {
                     Text("MESA DE ÁUDIO", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
                     Text("Toxic Sound", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 }
-                Switch(checked = AudioFx.enabled, onCheckedChange = { AudioFx.setEnabled(it) }, colors = neonSwitch())
+                Switch(checked = AudioFx.enabled, onCheckedChange = { AudioFx.setMasterEnabled(it) }, colors = neonSwitch())
             }
             if (!AudioFx.ready) Text("Toque uma música para ativar os efeitos do sistema.", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(12.dp))
