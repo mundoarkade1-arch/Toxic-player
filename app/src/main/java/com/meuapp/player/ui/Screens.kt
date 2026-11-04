@@ -58,7 +58,7 @@ import kotlin.math.pow
 // ───────────── Estrutura principal + navegação ─────────────
 @Composable
 fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by remember { mutableIntStateOf(1) }
     val bg by rememberCover(vm.currentTrack, 48)
     val target = bg?.let { lerp(Neon.Glow, Color(CoverLoader.averageColor(it)), 0.5f) } ?: Neon.Glow
     val glowColor by animateColorAsState(target, tween(700), label = "glow")
