@@ -10,6 +10,9 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
@@ -377,6 +380,20 @@ private fun groupTitle(vm: PlayerViewModel, key: String): String = when {
 
 @Composable
 private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var playlistMessage by remember { mutableStateOf("") }
+    val playlistPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching { ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty() }
+                    .getOrDefault("")
+            }
+            val name = uri.lastPathSegment?.substringAfterLast('/')?.substringBefore('?')?.substringBeforeLast('.') ?: "Playlist importada"
+            val count = vm.importPlaylist(name, com.meuapp.player.M3uPlaylist.parse(text))
+            playlistMessage = if (count > 0) "Playlist importada: $count faixas." else "Nenhuma faixa da playlist foi encontrada na biblioteca do celular."
+        }
+    }
     var newListDialog by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     Text("BIBLIOTECA", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
@@ -401,6 +418,11 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
     Spacer(Modifier.height(10.dp))
     if (vm.libMode == 3) {
         GhostButton("Criar lista", Modifier.fillMaxWidth()) { newListDialog = true }
+        Spacer(Modifier.height(8.dp))
+        GhostButton("Importar playlist do celular (.m3u)", Modifier.fillMaxWidth()) {
+            playlistPicker.launch(arrayOf("audio/x-mpegurl", "audio/mpegurl", "application/vnd.apple.mpegurl", "text/plain", "*/*"))
+        }
+        if (playlistMessage.isNotBlank()) Text(playlistMessage, fontSize = 12.sp, color = Neon.Dim)
         Spacer(Modifier.height(10.dp))
     }
     if (vm.tracks.isEmpty() && vm.libMode != 3) {
