@@ -257,7 +257,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                         val path = c.getString(p) ?: ""
                         val folderPath = path.substringBeforeLast('/', "")
                         val folderName = folderPath.substringAfterLast('/').ifEmpty { "Sem pasta" }
-                        list += Track(c.getLong(id), c.getString(t) ?: "Sem título", artistName, albumName, c.getLong(alId), c.getLong(d), folderPath, folderName)
+                        list += Track(c.getLong(id), c.getString(t) ?: "Sem título", artistName, albumName, c.getLong(alId), c.getLong(d), folderPath, folderName, path)
                     }
                 }
             } catch (e: Exception) { /* permissão negada ou erro do MediaStore: lista vazia */ }
@@ -372,6 +372,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val n = name.trim()
         if (n.isEmpty() || playlists.containsKey(n)) return false
         playlists[n] = emptyList(); savePlaylists(); return true
+    }
+
+    /** Importa uma playlist M3U vinculando cada caminho às músicas já indexadas no aparelho. */
+    fun importPlaylist(name: String, entries: List<String>): Int {
+        val baseName = name.trim().ifBlank { "Playlist importada" }
+        var finalName = baseName
+        var suffix = 2
+        while (playlists.containsKey(finalName)) { finalName = "$baseName ($suffix)"; suffix++ }
+        val matched = M3uPlaylist.match(entries, tracks)
+        if (matched.isEmpty()) return 0
+        playlists[finalName] = matched.map { it.id }
+        savePlaylists()
+        return matched.size
     }
 
     fun deletePlaylist(name: String) {
