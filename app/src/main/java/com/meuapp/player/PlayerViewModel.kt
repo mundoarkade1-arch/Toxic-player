@@ -26,7 +26,6 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.meuapp.player.audio.AudioFx
 import com.meuapp.player.audio.PlaybackService
-import com.meuapp.player.youtube.YouTubeStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -121,7 +120,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Conexão com o player ----------
     init {
         AudioFx.init(app)
-        YouTubeStore.init(app)
         loadPlaylists()
         val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
         val future = MediaController.Builder(app, token).buildAsync()
@@ -259,7 +257,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                         val path = c.getString(p) ?: ""
                         val folderPath = path.substringBeforeLast('/', "")
                         val folderName = folderPath.substringAfterLast('/').ifEmpty { "Sem pasta" }
-                        list += Track(c.getLong(id), c.getString(t) ?: "Sem título", artistName, albumName, c.getLong(alId), c.getLong(d), folderPath, folderName)
+                        list += Track(c.getLong(id), c.getString(t) ?: "Sem título", artistName, albumName, c.getLong(alId), c.getLong(d), folderPath, folderName, path)
                     }
                 }
             } catch (e: Exception) { /* permissão negada ou erro do MediaStore: lista vazia */ }
@@ -277,9 +275,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.prepare()
         c.play()
     }
-
-    /** Pausa a música local antes de abrir o YouTube. */
-    fun pauseLocal() { controller?.pause() }
 
     fun toggle() { controller?.let { playError = null; if (it.isPlaying) it.pause() else it.play() } }
     fun next() { controller?.seekToNextMediaItem() }
@@ -377,6 +372,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val n = name.trim()
         if (n.isEmpty() || playlists.containsKey(n)) return false
         playlists[n] = emptyList(); savePlaylists(); return true
+    }
+
+    /** Importa uma playlist M3U vinculando cada caminho às músicas já indexadas no aparelho. */
+    fun importPlaylist(name: String, entries: List<String>): Int {
+        val baseName = name.trim().ifBlank { "Playlist importada" }
+        var finalName = baseName
+        var suffix = 2
+        while (playlists.containsKey(finalName)) { finalName = "$baseName ($suffix)"; suffix++ }
+        val matched = M3uPlaylist.match(entries, tracks)
+        if (matched.isEmpty()) return 0
+        playlists[finalName] = matched.map { it.id }
+        savePlaylists()
+        return matched.size
     }
 
     fun deletePlaylist(name: String) {
