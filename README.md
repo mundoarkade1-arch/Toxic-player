@@ -6,7 +6,7 @@ Player Android para músicas guardadas no aparelho, com busca local, biblioteca 
 
 - Lê músicas locais autorizadas pelo usuário e reproduz em segundo plano.
 - Busca por título, artista, álbum e pasta.
-- Organiza a biblioteca por pastas, artistas e álbuns; cria playlists e favoritas.
+- Organiza a biblioteca por pastas, artistas e álbuns; cria playlists e favoritas e importa playlists M3U/M3U8 do celular.
 - Player com fila, reprodução aleatória, repetição, velocidade, tom e timer.
 - Mesa de áudio com equalizador, filtros, dinâmica, efeitos, presets e medidores.
 - A permissão para acessar músicas é solicitada quando a Biblioteca é aberta.
