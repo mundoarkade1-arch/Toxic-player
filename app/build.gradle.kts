@@ -38,7 +38,8 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (System.getenv("KEYSTORE_PASSWORD") != null) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -54,7 +55,7 @@ android {
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
     lint {
         disable += "UnsafeOptInUsageError"
-        checkReleaseBuilds = false
+        checkReleaseBuilds = true
         abortOnError = false
     }
 }

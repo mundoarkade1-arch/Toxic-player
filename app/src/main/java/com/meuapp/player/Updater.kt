@@ -24,6 +24,7 @@ object Updater {
     }
 
     private const val MIN_INTERVAL_MS = 10 * 60 * 1000L
+    private const val MAX_APK_BYTES = 200L * 1024 * 1024   // teto de segurança para o download
 
     /** Consulta a última Release (com cache de 10 min e ETag para não estourar o limite do GitHub). */
     suspend fun check(ctx: Context, force: Boolean): Check = withContext(Dispatchers.IO) {
@@ -68,26 +69,44 @@ object Updater {
 
     /** Baixa para um arquivo temporário, confere tamanho/hash e só então renomeia. Reaproveita download já válido. */
     suspend fun download(ctx: Context, info: UpdateInfo, onProgress: (Float) -> Unit): File = withContext(Dispatchers.IO) {
+        // A URL vem de um JSON da internet: só https, só GitHub e só o repositório deste app.
+        val first = URL(info.url)
+        val expectedPath = "/${BuildConfig.GH_OWNER}/${BuildConfig.GH_REPO}/releases/download/"
+        if (!UpdateLogic.isTrustedDownloadUrl(info.url) || !first.path.startsWith(expectedPath, ignoreCase = true))
+            throw IOException("Endereço de download não confiável")
+        if (info.size > MAX_APK_BYTES) throw IOException("Arquivo grande demais")
+        val limit = if (info.size > 0) info.size else MAX_APK_BYTES
+
         val dir = File(ctx.cacheDir, "update").apply { mkdirs() }
         val out = File(dir, "ToxicPlayer-c${info.versionCode}.apk")
         dir.listFiles()?.filter { it.name != out.name }?.forEach { it.delete() }
         if (out.exists() && integrityError(out, info) == null) { onProgress(1f); return@withContext out }
         val part = File(dir, out.name + ".part")
         part.delete()
-        val c = URL(info.url).openConnection() as HttpURLConnection
+        val c = first.openConnection() as HttpURLConnection
         c.connectTimeout = 15_000
         c.readTimeout = 30_000
         if (c.responseCode != 200) throw IOException("HTTP ${c.responseCode}")
+        // Depois dos redirecionamentos o endereço final também precisa ser do GitHub, em https.
+        if (!c.url.protocol.equals("https", ignoreCase = true) || !UpdateLogic.isTrustedHost(c.url.host))
+            throw IOException("Redirecionamento para servidor não confiável")
+        if (c.contentLengthLong > limit) throw IOException("Arquivo maior que o anunciado")
         val total = c.contentLengthLong.takeIf { it > 0 } ?: info.size
-        c.inputStream.use { input ->
-            part.outputStream().use { o ->
-                val buf = ByteArray(16 * 1024); var done = 0L
-                while (true) {
-                    val n = input.read(buf); if (n < 0) break
-                    o.write(buf, 0, n); done += n
-                    if (total > 0) onProgress((done.toFloat() / total).coerceIn(0f, 1f))
+        try {
+            c.inputStream.use { input ->
+                part.outputStream().use { o ->
+                    val buf = ByteArray(16 * 1024); var done = 0L
+                    while (true) {
+                        val n = input.read(buf); if (n < 0) break
+                        done += n
+                        if (done > limit) throw IOException("Arquivo maior que o anunciado")
+                        o.write(buf, 0, n)
+                        if (total > 0) onProgress((done.toFloat() / total).coerceIn(0f, 1f))
+                    }
                 }
             }
+        } catch (e: IOException) {
+            part.delete(); throw e
         }
         out.delete()
         if (!part.renameTo(out)) throw IOException("Não foi possível salvar o APK")
@@ -95,11 +114,23 @@ object Updater {
         out
     }
 
-    private fun sha256Hex(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+    private fun toHex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
+
+    private fun sha256Hex(bytes: ByteArray) = toHex(MessageDigest.getInstance("SHA-256").digest(bytes))
+
+    /** Hash calculado em blocos: não carrega o APK inteiro na memória. */
+    private fun sha256Hex(f: File): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { input ->
+            val buf = ByteArray(64 * 1024)
+            while (true) { val n = input.read(buf); if (n < 0) break; md.update(buf, 0, n) }
+        }
+        return toHex(md.digest())
+    }
 
     private fun integrityError(f: File, info: UpdateInfo): String? {
         if (info.size > 0 && f.length() != info.size) return "Download incompleto"
-        if (info.sha256 != null && !sha256Hex(f.readBytes()).equals(info.sha256, ignoreCase = true)) return "Arquivo corrompido (hash diferente)"
+        if (info.sha256 != null && !sha256Hex(f).equals(info.sha256, ignoreCase = true)) return "Arquivo corrompido (hash diferente)"
         return null
     }
 

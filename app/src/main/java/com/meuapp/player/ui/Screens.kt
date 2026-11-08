@@ -385,13 +385,10 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
     var playlistMessage by remember { mutableStateOf("") }
     val playlistPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
-            val text = withContext(Dispatchers.IO) {
-                runCatching { ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty() }
-                    .getOrDefault("")
-            }
+            val text = withContext(Dispatchers.IO) { com.meuapp.player.SafeRead.readText(ctx, uri) }
             val name = uri.lastPathSegment?.substringAfterLast('/')?.substringBefore('?')?.substringBeforeLast('.') ?: "Playlist importada"
-            val count = vm.importPlaylist(name, com.meuapp.player.M3uPlaylist.parse(text))
-            playlistMessage = if (count > 0) "Playlist importada: $count faixas." else "Nenhuma faixa da playlist foi encontrada na biblioteca do celular."
+            val count = vm.importPlaylist(name, com.meuapp.player.M3uPlaylist.parse(text.orEmpty()))
+            playlistMessage = if (text == null) "Arquivo ilegível ou maior que 1 MB." else if (count > 0) "Playlist importada: $count faixas." else "Nenhuma faixa da playlist foi encontrada na biblioteca do celular."
         }
     }
     var newListDialog by remember { mutableStateOf(false) }
@@ -891,8 +888,8 @@ private fun PresetSection() {
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            val txt = try { ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: "" } catch (e: Exception) { "" }
-            msg = if (txt.trimStart().startsWith("{")) AudioFx.importJson(txt) else {
+            val txt = com.meuapp.player.SafeRead.readText(ctx, uri).orEmpty()
+            msg = if (txt.isEmpty()) "Arquivo vazio, ilegível ou maior que 1 MB" else if (txt.trimStart().startsWith("{")) AudioFx.importJson(txt) else {
                 val n = AudioFx.importApo(txt)
                 if (n > 0) "Importado como EQ paramétrico: $n filtros. ${AudioFx.importNote}" else "Nenhum filtro reconhecido no arquivo"
             }

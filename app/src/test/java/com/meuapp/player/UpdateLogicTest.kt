@@ -10,7 +10,7 @@ import org.junit.Test
 class UpdateLogicTest {
     private fun release(vararg names: String, draft: Boolean = false, pre: Boolean = false): String {
         val arr = names.joinToString(",") {
-            """{"name":"$it","browser_download_url":"https://x/$it","size":1000,"state":"uploaded"}"""
+            """{"name":"$it","browser_download_url":"https://github.com/o/r/releases/download/v9/$it","size":1000,"state":"uploaded"}"""
         }
         return """{"tag_name":"v9","draft":$draft,"prerelease":$pre,"body":"notas","assets":[$arr]}"""
     }
@@ -55,7 +55,24 @@ class UpdateLogicTest {
 
     @Test fun leHashQuandoExiste() {
         val h = "a".repeat(64)
-        val json = """{"draft":false,"prerelease":false,"assets":[{"name":"ToxicPlayer-v1.0.1-c101.apk","browser_download_url":"https://x/a","size":5,"state":"uploaded","digest":"sha256:$h"}]}"""
+        val json = """{"draft":false,"prerelease":false,"assets":[{"name":"ToxicPlayer-v1.0.1-c101.apk","browser_download_url":"https://github.com/o/r/releases/download/v1/a.apk","size":5,"state":"uploaded","digest":"sha256:$h"}]}"""
         assertEquals(h, UpdateLogic.parse(json)!!.sha256)
+    }
+
+    @Test fun aceitaSomenteHttpsDoGitHub() {
+        assertTrue(UpdateLogic.isTrustedDownloadUrl("https://github.com/o/r/releases/download/v1/a.apk"))
+        assertTrue(UpdateLogic.isTrustedDownloadUrl("https://objects.githubusercontent.com/abc"))
+        assertFalse(UpdateLogic.isTrustedDownloadUrl("http://github.com/o/r/a.apk"))
+        assertFalse(UpdateLogic.isTrustedDownloadUrl("https://evil.com/a.apk"))
+        assertFalse(UpdateLogic.isTrustedDownloadUrl("https://github.com.evil.com/a.apk"))
+        assertFalse(UpdateLogic.isTrustedDownloadUrl("https://evilgithubusercontent.com/a.apk"))
+        assertFalse(UpdateLogic.isTrustedDownloadUrl("https://user:pw@github.com/a.apk"))
+        assertFalse(UpdateLogic.isTrustedDownloadUrl("https://github.com:8443/a.apk"))
+        assertFalse(UpdateLogic.isTrustedDownloadUrl("nao e url"))
+    }
+
+    @Test fun ignoraApkComUrlNaoConfiavel() {
+        val json = """{"draft":false,"prerelease":false,"assets":[{"name":"ToxicPlayer-v1.0.1-c101.apk","browser_download_url":"https://evil.com/a.apk","size":5,"state":"uploaded"}]}"""
+        assertNull(UpdateLogic.parse(json))
     }
 }

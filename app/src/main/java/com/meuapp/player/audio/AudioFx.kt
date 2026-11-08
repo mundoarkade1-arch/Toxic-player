@@ -22,6 +22,9 @@ import kotlin.math.pow
  * Efeitos do sistema (dependem do aparelho): Loudness, Bass Boost, Surround e compressor multibanda.
  */
 object AudioFx {
+    private const val MAX_CUSTOM = 64   // máximo de perfis salvos/importados
+    private const val MAX_NAME = 60      // máximo de caracteres no nome de um perfil
+
     val EQ_FREQS = DspCore.GRAPHIC_FREQS.toList()
 
     val PRESETS: Map<String, List<Float>> = linkedMapOf(
@@ -183,7 +186,7 @@ object AudioFx {
             // Primeira execução: já deixa o perfil de graves suaves disponível em "Meus perfis"
             try { writeCustom(JSONObject().put("Toxic · Graves Suaves", JSONObject(TOXIC_BASS))) } catch (e: Exception) { }
         }
-        fadeSec = p.getFloat("fade", 0f)
+        fadeSec = p.getFloat("fade", 0f).let { if (it.isNaN()) 0f else it.coerceIn(0f, 8f) }
         refreshCustom()
         try {
             val rj = JSONObject(p.getString("routes", "{}") ?: "{}")
@@ -193,7 +196,11 @@ object AudioFx {
         DspEngine.core.params = buildParams()
     }
 
-    private fun JSONObject.f(k: String, d: Float) = optDouble(k, d.toDouble()).toFloat()
+    /** Lê um número do JSON, troca NaN/Infinito pelo padrão e limita à faixa permitida pela interface. */
+    private fun JSONObject.f(k: String, d: Float, lo: Float, hi: Float): Float {
+        val v = optDouble(k, d.toDouble()).toFloat()
+        return if (v.isNaN() || v.isInfinite()) d else v.coerceIn(lo, hi)
+    }
 
     private fun snapshot(): JSONObject = JSONObject().apply {
         put("eq", JSONArray(bands.map { it.toDouble() }))
@@ -218,30 +225,37 @@ object AudioFx {
     }
 
     private fun restore(j: JSONObject) {
-        j.optJSONArray("eq")?.let { a -> for (i in 0 until minOf(10, a.length())) bands[i] = a.optDouble(i, 0.0).toFloat() }
+        // Todos os valores vêm de arquivo/preferências (não confiáveis): cada um é limitado à mesma faixa dos controles da tela.
+        j.optJSONArray("eq")?.let { a ->
+            for (i in 0 until minOf(10, a.length())) {
+                val v = a.optDouble(i, 0.0).toFloat()
+                bands[i] = if (v.isNaN() || v.isInfinite()) 0f else v.coerceIn(-12f, 12f)
+            }
+        }
         filters.clear()
         j.optJSONArray("filters")?.let { a ->
             for (i in 0 until minOf(DspCore.MAX_PARAM, a.length())) {
                 val o = a.optJSONObject(i) ?: continue
                 val t = try { FilterType.valueOf(o.optString("t", "PEAK")) } catch (e: Exception) { FilterType.PEAK }
-                filters.add(sanitize(EqFilter(t, o.f("f", 1000f), o.f("g", 0f), o.f("q", 1f), o.optBoolean("on", true))))
+                filters.add(sanitize(EqFilter(t, o.f("f", 1000f, 20f, 20000f), o.f("g", 0f, -18f, 18f), o.f("q", 1f, 0.1f, 18f), o.optBoolean("on", true))))
             }
         }
         eqOn = j.optBoolean("eqOn", true); paramOn = j.optBoolean("paramOn", true)
-        preamp = j.f("pre", 0f); autoHeadroom = j.optBoolean("auto", false); balance = j.f("bal", 0f)
-        width = j.f("width", 1f); crossfeed = j.f("cross", 0f); loudness = j.f("loud", 0f)
-        compOn = j.optBoolean("compOn", false); thr = j.f("thr", -20f); ratio = j.f("ratio", 3f)
-        attack = j.f("att", 10f); release = j.f("rel", 120f); knee = j.f("knee", 6f)
-        makeup = j.f("mk", 0f); compRms = j.optBoolean("rms", true)
-        limOn = j.optBoolean("limOn", true); limThr = j.f("limThr", -1f); limRelease = j.f("limRel", 60f)
-        mbcOn = j.optBoolean("mbcOn", false); mbcRatio = j.f("mbcRatio", 3f)
-        val oldThr = j.f("mbcThr", -24f)   // perfis antigos tinham um só threshold
-        mbThrL = j.f("mbL", oldThr); mbThrM = j.f("mbM", oldThr); mbThrH = j.f("mbH", oldThr)
-        mbAttack = j.f("mbAtt", 15f); mbRelease = j.f("mbRel", 150f); mbKnee = j.f("mbKnee", 6f)
-        mbMakeup = j.f("mbMk", 0f); mbX1 = j.f("mbX1", 250f); mbX2 = j.f("mbX2", 3000f); compScHpf = j.f("scHpf", 0f)
-        bassPct = j.f("bass", 0f); virtPct = j.f("virt", 0f)
+        preamp = j.f("pre", 0f, -12f, 12f); autoHeadroom = j.optBoolean("auto", false); balance = j.f("bal", 0f, -1f, 1f)
+        width = j.f("width", 1f, 0f, 2f); crossfeed = j.f("cross", 0f, 0f, 1f); loudness = j.f("loud", 0f, 0f, 10f)
+        compOn = j.optBoolean("compOn", false); thr = j.f("thr", -20f, -60f, 0f); ratio = j.f("ratio", 3f, 1f, 20f)
+        attack = j.f("att", 10f, 0.1f, 100f); release = j.f("rel", 120f, 10f, 1000f); knee = j.f("knee", 6f, 0f, 24f)
+        makeup = j.f("mk", 0f, 0f, 18f); compRms = j.optBoolean("rms", true)
+        limOn = j.optBoolean("limOn", true); limThr = j.f("limThr", -1f, -12f, 0f); limRelease = j.f("limRel", 60f, 10f, 500f)
+        mbcOn = j.optBoolean("mbcOn", false); mbcRatio = j.f("mbcRatio", 3f, 1f, 20f)
+        val oldThr = j.f("mbcThr", -24f, -60f, 0f)   // perfis antigos tinham um só threshold
+        mbThrL = j.f("mbL", oldThr, -60f, 0f); mbThrM = j.f("mbM", oldThr, -60f, 0f); mbThrH = j.f("mbH", oldThr, -60f, 0f)
+        mbAttack = j.f("mbAtt", 15f, 0.5f, 100f); mbRelease = j.f("mbRel", 150f, 20f, 1000f); mbKnee = j.f("mbKnee", 6f, 0f, 24f)
+        mbMakeup = j.f("mbMk", 0f, 0f, 18f); mbX1 = j.f("mbX1", 250f, 60f, 600f); mbX2 = j.f("mbX2", 3000f, 1500f, 8000f)
+        compScHpf = j.f("scHpf", 0f, 0f, 500f)
+        bassPct = j.f("bass", 0f, 0f, 100f); virtPct = j.f("virt", 0f, 0f, 100f)
         truePeak = j.optBoolean("tp", true); levelerOn = j.optBoolean("lev", false)
-        levelerTarget = j.f("levT", -16f); ditherOn = j.optBoolean("dith", true)
+        levelerTarget = j.f("levT", -16f, -24f, -10f); ditherOn = j.optBoolean("dith", true)
     }
 
     private fun sanitize(f: EqFilter) = f.copy(
@@ -262,7 +276,12 @@ object AudioFx {
     }
 
     // ---------- Presets, perfis, backup ----------
-    fun saveCustom(name: String) { if (name.isBlank()) return; val j = customJson(); j.put(name.trim(), snapshot()); writeCustom(j) }
+    fun saveCustom(name: String) {
+        if (name.isBlank()) return
+        val n = name.trim().take(MAX_NAME); val j = customJson()
+        if (!j.has(n) && j.length() >= MAX_CUSTOM) return
+        j.put(n, snapshot()); writeCustom(j)
+    }
     fun loadCustom(name: String) { customJson().optJSONObject(name)?.let { restore(it); apply(); activeName = name } }
     fun deleteCustom(name: String) { val j = customJson(); j.remove(name); writeCustom(j) }
     fun duplicateCustom(name: String) {
@@ -272,7 +291,7 @@ object AudioFx {
     fun renameCustom(old: String, new: String) {
         if (new.isBlank() || old == new.trim()) return
         val j = customJson(); val o = j.optJSONObject(old) ?: return
-        j.remove(old); j.put(new.trim(), o); writeCustom(j)
+        j.remove(old); j.put(new.trim().take(MAX_NAME), o); writeCustom(j)
     }
     /** Liga/desliga todos os efeitos sem perder o nome do preset ativo. */
     fun setFade(v: Float) { fadeSec = v; prefs?.edit()?.putFloat("fade", v)?.apply() }
@@ -297,7 +316,14 @@ object AudioFx {
         val c = j.optJSONObject("custom")
         if (c != null) {
             val mine = customJson(); val keys = c.keys(); var n = 0
-            while (keys.hasNext()) { val k = keys.next(); mine.put(k, c.get(k)); n++ }
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val o = c.optJSONObject(k) ?: continue            // ignora entradas que não são perfis
+                val name = k.trim().take(MAX_NAME)
+                if (name.isEmpty()) continue
+                if (!mine.has(name) && mine.length() >= MAX_CUSTOM) break
+                mine.put(name, o); n++
+            }
             writeCustom(mine)
             j.optJSONObject("current")?.let { restore(it); apply() }
             "Backup restaurado: $n presets"
@@ -378,9 +404,9 @@ object AudioFx {
         activeName = "Personalizado"
         save()
         DspEngine.core.params = buildParams()
-        try { boost?.let { it.setEnabled(enabled && loudness > 0f); it.setTargetGain((loudness * 100).toInt()) } } catch (e: Exception) { }
-        try { bass?.let { it.setEnabled(enabled && bassPct > 0f); it.setStrength((bassPct * 10).toInt().toShort()) } } catch (e: Exception) { }
-        try { virt?.let { it.setEnabled(enabled && virtPct > 0f); it.setStrength((virtPct * 10).toInt().toShort()) } } catch (e: Exception) { }
+        try { boost?.let { it.setEnabled(enabled && loudness > 0f); it.setTargetGain((loudness.coerceIn(0f, 10f) * 100).toInt()) } } catch (e: Exception) { }
+        try { bass?.let { it.setEnabled(enabled && bassPct > 0f); it.setStrength((bassPct.coerceIn(0f, 100f) * 10).toInt().toShort()) } } catch (e: Exception) { }
+        try { virt?.let { it.setEnabled(enabled && virtPct > 0f); it.setStrength((virtPct.coerceIn(0f, 100f) * 10).toInt().toShort()) } } catch (e: Exception) { }
     }
 
     var importNote by mutableStateOf("")

@@ -52,7 +52,7 @@ class PlaybackService : MediaSessionService() {
         SleepTimer.attach(player)
         VolumeManager.attach(player)
         WidgetBridge.player = player
-        session = MediaSession.Builder(this, player).build()
+        session = MediaSession.Builder(this, player).setCallback(OwnAppOnly()).build()
     }
 
     private fun updateWidget(p: Player) {
@@ -63,6 +63,15 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    /** Só o próprio app e controladores confiáveis do sistema (barra de notificação, tela de bloqueio) podem controlar o player. */
+    private inner class OwnAppOnly : MediaSession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
+            if (controller.packageName == packageName || controller.isTrusted)
+                MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+            else
+                MediaSession.ConnectionResult.reject()
+    }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val p = session?.player

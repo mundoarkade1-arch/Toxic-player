@@ -440,7 +440,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } catch (e: Exception) {
                 progress = -1f
-                updateMsg = "Falha no download: ${e.message}"
+                updateMsg = "Falha no download da atualização. Verifique a conexão e tente de novo."
             }
             busy = false
         }

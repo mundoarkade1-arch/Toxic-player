@@ -37,7 +37,7 @@ object UpdateLogic {
                     val m = APK_RE.matchEntire(a.optString("name", "")) ?: continue
                     val code = m.groupValues[2].toLongOrNull() ?: continue
                     val url = a.optString("browser_download_url", "")
-                    if (url.isBlank()) continue
+                    if (!isTrustedDownloadUrl(url)) continue   // só https e só servidores do GitHub
                     val digest = a.optString("digest", "").removePrefix("sha256:").takeIf { it.length == 64 }
                     val cand = UpdateInfo(m.groupValues[1], code, url, a.optLong("size", -1L), digest, j.optString("body", ""))
                     if (best == null || cand.versionCode > best.versionCode) best = cand
@@ -47,6 +47,23 @@ object UpdateLogic {
         }
     } catch (e: JSONException) {
         null
+    }
+
+    /** Hosts onde o GitHub serve os arquivos de uma Release (o download redireciona de github.com para githubusercontent.com). */
+    fun isTrustedHost(host: String?): Boolean {
+        val h = host?.lowercase() ?: return false
+        return h == "github.com" || h == "githubusercontent.com" || h.endsWith(".githubusercontent.com")
+    }
+
+    /** Aceita apenas https, sem usuário/senha na URL, porta padrão e host do GitHub. */
+    fun isTrustedDownloadUrl(url: String): Boolean = try {
+        val u = java.net.URI(url)
+        u.scheme?.equals("https", ignoreCase = true) == true &&
+            u.rawUserInfo == null &&
+            (u.port == -1 || u.port == 443) &&
+            isTrustedHost(u.host)
+    } catch (e: Exception) {
+        false
     }
 
     /** Só existe atualização se o código publicado for MAIOR que o instalado. */
