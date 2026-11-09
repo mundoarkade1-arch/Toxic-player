@@ -92,12 +92,12 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
         scope.launch(Dispatchers.IO) {
             val l = repo.loadIndex()
             val off = CloudStorage.offlineIds()
-            withContext(Dispatchers.Main) { setTracks(l); offlineIds = off; indexLoaded = true; onIndexLoaded?.invoke() }
+            withContext(Dispatchers.Main) { applyTracks(l); offlineIds = off; indexLoaded = true; onIndexLoaded?.invoke() }
             refreshUsage()
         }
     }
 
-    private fun setTracks(l: List<CloudTrack>) {
+    private fun applyTracks(l: List<CloudTrack>) {
         tracks = l
         byId = l.associateBy { it.id }
         val pt = l.map(::toTrack)
@@ -192,7 +192,7 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
             prefs.edit().remove("acc_name").remove("acc_email").remove("acc_usage").remove("acc_limit").apply()
             withContext(Dispatchers.Main) {
                 connected = false; accountName = ""; accountEmail = ""; usageBytes = 0; limitBytes = 0
-                setTracks(emptyList()); offlineIds = emptySet(); downloads.clear()
+                applyTracks(emptyList()); offlineIds = emptySet(); downloads.clear()
                 syncing = false; progress = SyncProgress.Idle; lastSyncMs = 0L; openGroup = null
                 message = if (revoked) "Conta desconectada e acesso revogado no Google."
                 else "Conta desconectada neste aparelho. Não consegui confirmar a revogação no Google (sem internet?); você pode removê-la em myaccount.google.com/permissions."
@@ -246,7 +246,7 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
     private fun publish() {
         val l = repo.snapshot()
         val off = CloudStorage.offlineIds()
-        scope.launch(Dispatchers.Main) { setTracks(l); offlineIds = off }
+        scope.launch(Dispatchers.Main) { applyTracks(l); offlineIds = off }
     }
 
     private suspend fun fail(e: Throwable, fallback: CloudErrorKind? = null) {
