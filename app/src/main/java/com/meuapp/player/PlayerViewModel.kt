@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.ContentUris
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
 import android.provider.MediaStore.Audio.Media
 import androidx.compose.runtime.getValue
@@ -26,6 +28,10 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.meuapp.player.audio.AudioFx
 import com.meuapp.player.audio.PlaybackService
+import com.meuapp.player.cloud.CloudAuth
+import com.meuapp.player.cloud.CloudErrorKind
+import com.meuapp.player.cloud.CloudManager
+import com.meuapp.player.cloud.CloudPlayback
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -67,6 +73,31 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var restored = false
     private var lastSave = 0L
     private var byLong: Map<Long, Track> = emptyMap()
+
+    // Toxic Cloud: biblioteca na nuvem, sincronização, cache e downloads offline.
+    val cloud = CloudManager(app, viewModelScope)
+    private var localLoaded = false
+    @Volatile private var pendingRetry = false      // erro de rede/sessão: retomar quando possível
+    private var tokenRetried = false
+    private val connectivity = app.getSystemService(ConnectivityManager::class.java)
+    private val netCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            if (pendingRetry) ContextCompat.getMainExecutor(app).execute { retryPlayback() }
+        }
+    }
+
+    /** Procura uma faixa local ou da nuvem pelo id numérico. */
+    private fun lookup(id: Long): Track? = byLong[id] ?: cloud.trackByNumericId(id)
+
+    /** Sem permissão de áudio local: a restauração da fila não precisa esperar pela biblioteca do aparelho. */
+    fun skipLocal() { if (!localLoaded) { localLoaded = true; syncOrRestore() } }
+
+    private fun retryPlayback() {
+        val c = controller ?: return
+        if (!pendingRetry) return
+        pendingRetry = false
+        if (c.mediaItemCount > 0 && c.playbackState == Player.STATE_IDLE) { c.prepare() }
+    }
     var showTips by mutableStateOf(!prefs.getBoolean("tips_seen", false)); private set
     fun dismissTips() { showTips = false; prefs.edit().putBoolean("tips_seen", true).apply() }
 
@@ -91,7 +122,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Músicas de uma pasta, artista, álbum ou lista (listas mantêm a ordem em que foram montadas). */
     fun tracksIn(key: String?): List<Track> =
-        if (key != null && key.startsWith("P:")) (playlists[key.drop(2)] ?: emptyList()).mapNotNull { byLong[it] }
+        if (key != null && key.startsWith("P:")) (playlists[key.drop(2)] ?: emptyList()).mapNotNull { lookup(it) }
         else tracksSorted(key)
 
     private fun tracksSorted(key: String?): List<Track> = sorted(
@@ -121,13 +152,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     init {
         AudioFx.init(app)
         loadPlaylists()
+        try { connectivity?.registerDefaultNetworkCallback(netCallback) } catch (e: Exception) { /* sem monitor de rede: retomada só manual */ }
+        cloud.onIndexLoaded = { syncOrRestore(); refreshCurrent(); refreshQueue(); cloud.maybeAutoSync() }
         val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
         val future = MediaController.Builder(app, token).buildAsync()
         future.addListener({
             val c = future.get()
             controller = c
             c.addListener(object : Player.Listener {
-                override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing; if (!playing) savePos() }
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                    if (playing) { playError = null; pendingRetry = false; tokenRetried = false }
+                    if (!playing) savePos()
+                }
                 override fun onMediaMetadataChanged(m: MediaMetadata) {
                     title = m.title?.toString() ?: "Faixa"
                     artist = m.artist?.toString() ?: "Artista desconhecido"
@@ -136,6 +173,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { savePos(); refreshCurrent(); refreshQueue() }
                 override fun onTimelineChanged(timeline: Timeline, reason: Int) { refreshQueue() }
                 override fun onPlayerError(error: PlaybackException) {
+                    val curId = c.currentMediaItem?.mediaId?.toLongOrNull()
+                    if (curId != null && curId < 0) {
+                        // Faixa da nuvem: explica o motivo. Falhas de rede/sessão pausam e retomam depois, sem pular faixas.
+                        val kind = CloudPlayback.classify(error)
+                        playError = kind.message
+                        if (kind == CloudErrorKind.TOKEN_EXPIRED) {
+                            CloudAuth.invalidateToken()             // força renovação silenciosa na próxima abertura
+                            if (!tokenRetried) { tokenRetried = true; c.prepare(); return }
+                        }
+                        if (CloudPlayback.isRecoverable(kind)) { pendingRetry = true; return }
+                        if (c.hasNextMediaItem()) { c.seekToNextMediaItem(); c.prepare(); c.play() }
+                        return
+                    }
                     // Arquivo removido ou ilegível: avisa e pula para a próxima faixa
                     playError = "Não foi possível tocar esta faixa"
                     if (c.hasNextMediaItem()) { c.seekToNextMediaItem(); c.prepare(); c.play() }
@@ -159,19 +209,23 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---------- Continuar de onde parou ----------
-    private fun mediaItem(t: Track) = MediaItem.Builder()
-        .setMediaId(t.id.toString())
-        .setUri(t.uri)
-        .setMediaMetadata(
-            MediaMetadata.Builder().setTitle(t.title).setArtist(t.artist).setAlbumTitle(t.album)
-                .setArtworkUri(ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), t.albumId))
-                .build()
-        )
-        .build()
+    private fun mediaItem(t: Track): MediaItem {
+        val meta = MediaMetadata.Builder().setTitle(t.title).setArtist(t.artist).setAlbumTitle(t.album)
+        if (t.cloudId != null) {
+            cloud.artworkUri(t)?.let { meta.setArtworkUri(it) }
+        } else {
+            meta.setArtworkUri(ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), t.albumId))
+        }
+        return MediaItem.Builder()
+            .setMediaId(t.id.toString())
+            .setUri(if (t.cloudId != null) cloud.playbackUri(t) else t.uri)   // nuvem: arquivo offline ou URI interna de streaming
+            .setMediaMetadata(meta.build())
+            .build()
+    }
 
     private fun refreshCurrent() {
         val id = controller?.currentMediaItem?.mediaId
-        currentTrack = if (id == null) null else tracks.firstOrNull { it.id.toString() == id }
+        currentTrack = id?.toLongOrNull()?.let { lookup(it) }
     }
 
     private fun saveQueue(list: List<Track>) {
@@ -207,10 +261,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private fun syncOrRestore() {
         val c = controller ?: return
         if (c.mediaItemCount > 0) { syncFromController(c); restored = true; return }
-        if (restored || tracks.isEmpty()) return
+        // Espera as duas bibliotecas (aparelho e nuvem) para não descartar faixas de uma delas por pressa.
+        if (restored || !localLoaded || !cloud.indexLoaded) return
+        val all = tracks + cloud.playerTracks
+        if (all.isEmpty()) return
         restored = true
         val arr = try { JSONArray(prefs.getString("ids", null) ?: return) } catch (e: Exception) { return }
-        val byId = tracks.associateBy { it.id.toString() }
+        val byId = all.associateBy { it.id.toString() }
         val savedIdx = prefs.getInt("idx", 0)
         val list = ArrayList<Track>()
         var newIdx = -1; var exact = false
@@ -261,7 +318,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             } catch (e: Exception) { /* permissão negada ou erro do MediaStore: lista vazia */ }
-            withContext(Dispatchers.Main) { tracks = list; byLong = list.associateBy { it.id }; syncOrRestore(); refreshCurrent(); refreshQueue() }
+            withContext(Dispatchers.Main) { tracks = list; byLong = list.associateBy { it.id }; localLoaded = true; syncOrRestore(); refreshCurrent(); refreshQueue() }
         }
     }
 
@@ -276,7 +333,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.play()
     }
 
-    fun toggle() { controller?.let { playError = null; if (it.isPlaying) it.pause() else it.play() } }
+    fun toggle() {
+        controller?.let {
+            playError = null
+            if (it.isPlaying) it.pause()
+            else {
+                // Depois de um erro de rede o player fica ocioso: prepara de novo e retoma do mesmo ponto.
+                if (it.playbackState == Player.STATE_IDLE && it.mediaItemCount > 0) it.prepare()
+                it.play()
+            }
+        }
+    }
     fun next() { controller?.seekToNextMediaItem() }
     fun prev() { controller?.seekToPreviousMediaItem() }
     fun seek(ms: Long) { controller?.seekTo(ms) }
@@ -303,7 +370,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         for (i in 0 until c.mediaItemCount) {
             val item = c.getMediaItemAt(i)
             val id = item.mediaId.toLongOrNull() ?: 0L
-            l.add(byLong[id] ?: Track(id, item.mediaMetadata.title?.toString() ?: "Faixa", item.mediaMetadata.artist?.toString() ?: "", "", 0L, 0L, "", ""))
+            l.add(lookup(id) ?: Track(id, item.mediaMetadata.title?.toString() ?: "Faixa", item.mediaMetadata.artist?.toString() ?: "", "", 0L, 0L, "", ""))
         }
         queue = l
         queueIndex = c.currentMediaItemIndex
@@ -447,6 +514,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        try { connectivity?.unregisterNetworkCallback(netCallback) } catch (e: Exception) { }
         savePos()
         controller?.release()
         super.onCleared()

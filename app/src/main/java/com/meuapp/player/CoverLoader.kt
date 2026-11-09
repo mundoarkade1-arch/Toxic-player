@@ -17,11 +17,26 @@ object CoverLoader {
     private val missing = HashSet<String>()
 
     fun load(ctx: Context, t: Track, size: Int): Bitmap? {
+        if (t.cloudId != null) return loadCloud(t, size)
         val key = "${t.id}:$size"
         cache.get(key)?.let { return it }
         synchronized(missing) { if (key in missing) return null }
         val bmp = try { fetch(ctx, t, size) } catch (e: Exception) { null }
         if (bmp != null) cache.put(key, bmp) else synchronized(missing) { missing.add(key) }
+        return bmp
+    }
+
+    /** Capa da nuvem: arquivo já extraído das tags (cache local). Sem cache negativo: a capa pode chegar depois. */
+    private fun loadCloud(t: Track, size: Int): Bitmap? {
+        val key = "c:${t.cloudId}:${t.coverStamp}:$size"
+        cache.get(key)?.let { return it }
+        val f = com.meuapp.player.cloud.CloudStorage.coverFile(t.cloudId ?: return null)
+        if (!f.exists()) return null
+        val bmp = try {
+            val o = BitmapFactory.Options().apply { inSampleSize = sample(f.absolutePath, size) }
+            BitmapFactory.decodeFile(f.absolutePath, o)
+        } catch (e: Exception) { null }
+        if (bmp != null) cache.put(key, bmp)
         return bmp
     }
 
