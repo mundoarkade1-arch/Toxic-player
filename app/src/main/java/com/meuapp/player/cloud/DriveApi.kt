@@ -35,7 +35,7 @@ class DriveApi(private val tokens: TokenProvider = DefaultTokens) {
     )
 
     /**
-     * Lista arquivos candidatos a áudio. A consulta pega audio/* e octet-stream/ogg (o Drive às vezes classifica
+     * Lista arquivos candidatos a áudio. A consulta pega tipos de áudio, ogg e octet-stream (o Drive às vezes classifica
      * FLAC/OPUS assim); o filtro final por extensão/MIME é feito em [DriveJson.parseFile].
      */
     fun listAudio(pageToken: String?): FilesPage {
