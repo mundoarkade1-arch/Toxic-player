@@ -1,27 +1,44 @@
-'# Toxic Player
+# Toxic Player
 
-Player Android para músicas guardadas no aparelho, com busca local, biblioteca por pastas/artistas/álbuns, playlists pessoais e favoritas, fila de reprodução e controles avançados de áudio.
+Player Android para músicas guardadas no aparelho, com busca local, biblioteca por pastas/artistas/álbuns, playlists pessoais, favoritas, fila de reprodução e controles de áudio.
 
 ## Recursos
 
-- Lê músicas locais autorizadas pelo usuário e reproduz em segundo plano.
+- Reprodução local em segundo plano com Android Media3/ExoPlayer.
 - Busca por título, artista, álbum e pasta.
-- Organiza a biblioteca por pastas, artistas e álbuns; cria playlists e favoritas e importa playlists M3U/M3U8 do celular.
-- Player com fila, reprodução aleatória, repetição, velocidade, tom e timer.
-- Mesa de áudio com equalizador, filtros, dinâmica, efeitos, presets e medidores.
-- A permissão para acessar músicas é solicitada quando a Biblioteca é aberta.
+- Biblioteca organizada por pastas, artistas e álbuns.
+- Playlists M3U/M3U8, fila, favoritos, aleatório e repetição.
+- Velocidade, tom, timer e transição entre músicas.
+- Equalizador gráfico e paramétrico, compressor, compressor multibanda, limitador, medidores e perfis.
+- Importação/exportação de presets JSON e importação de Equalizer APO/AutoEQ.
 
-## Abrir e executar
+## Estrutura oficial do código
 
-Abra esta pasta no Android Studio e aguarde a sincronização do Gradle. O app exige Android 9 ou posterior.
+O código Android ativo fica exclusivamente em `app/src/main/java/`. Os testes ficam em `app/src/test/java/`. Não mantenha cópias Kotlin soltas na raiz: elas não são compiladas pelo Gradle.
 
-O pacote exportado não inclui um Gradle Wrapper completo. Para compilar, use o Gradle integrado/instalado pelo Android Studio ou adicione o wrapper pelo Android Studio antes de executar o projeto fora dele.
+## Abrir e compilar
 
-## Áudio
+Abra a pasta raiz no Android Studio e aguarde a sincronização do Gradle. O projeto usa Gradle 8.7, Java 17 e Android SDK 34. O APK de depuração pode ser compilado com:
 
-O DSP próprio processa PCM de 16 bits mono/estéreo no pipeline Media3. Efeitos do sistema como Bass Boost e Virtualizer variam conforme o aparelho. A Mesa de áudio controla o processamento das músicas locais tocadas pelo app.
+```bash
+gradle testDebugUnitTest assembleDebug
+```
 
-## Publicação'
+O projeto ainda não inclui os scripts e o JAR do Gradle Wrapper. O GitHub Actions instala Gradle 8.7 automaticamente, executa os testes e publica o APK de depuração como artefato.
 
-O workflow em `.github/workflows/build.yml` compila, testa e publica APKs. Para releases assinadas, configure os secrets de assinatura do workflow; não coloque o keystore ou suas senhas no repositório.
+## Áudio e limitações
 
+O DSP próprio é conectado ao pipeline Media3. O processador atual aceita PCM de 16 bits mono/estéreo; formatos incompatíveis passam sem processamento. Bass Boost, Loudness Enhancer e Virtualizer são efeitos Android opcionais e variam por fabricante/aparelho. O limitador usa detecção de pico entre amostras aproximada; não deve ser tratado como equipamento de medição certificado.
+
+## GitHub Actions
+
+- Push e Pull Request: executa testes, compila APK debug e disponibiliza o arquivo como artefato.
+- Execução manual (`workflow_dispatch`): também tenta publicar uma versão assinada. Para isso, configure `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` e `KEY_PASSWORD` nos secrets do repositório.
+
+Nunca envie keystore, senhas ou tokens para o repositório.
+
+## Toxic Cloud (Google Drive)
+
+A aba **Cloud** conecta sua conta Google e toca pela internet as músicas que já estão no seu Drive (MP3, FLAC, WAV, M4A, AAC, OGG, OPUS), sem baixar a biblioteca inteira e sem servidor próprio. Há índice local, sincronização incremental, cache de streaming com limite e downloads offline opcionais.
+
+Antes do primeiro uso é preciso configurar o Google Cloud Console (uma vez): veja [docs/GOOGLE_DRIVE_SETUP.md](docs/GOOGLE_DRIVE_SETUP.md). Funcionamento e limitações: [docs/TOXIC_CLOUD.md](docs/TOXIC_CLOUD.md). Arquitetura: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Testes: [TESTING.md](TESTING.md).

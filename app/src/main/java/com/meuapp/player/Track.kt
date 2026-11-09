@@ -23,8 +23,15 @@ data class Track(
     val durationMs: Long,
     val folderPath: String,
     val folderName: String,
-    val filePath: String = ""
+    val filePath: String = "",
+    /** Toxic Cloud: id do arquivo no Google Drive (null = música local). */
+    val cloudId: String? = null,
+    /** Muda quando a capa da nuvem passa a existir, para a interface recarregar a imagem. */
+    val coverStamp: Long = 0L
 ) {
-    val uri: Uri get() = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+    /** Música local: URI do MediaStore. Música da nuvem: URI interna de streaming (nunca um link do Drive). */
+    val uri: Uri get() =
+        if (cloudId != null) Uri.parse("toxiccloud://drive/$cloudId")
+        else ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
 }
 

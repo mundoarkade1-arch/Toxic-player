@@ -12,6 +12,9 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
+import com.meuapp.player.cloud.CloudPlayback
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.meuapp.player.widget.ToxicWidget
@@ -34,7 +37,13 @@ class PlaybackService : MediaSessionService() {
                 .setAudioProcessorChain(DefaultAudioSink.DefaultAudioProcessorChain(DspEngine.processor))
                 .build()
         }
+        // Toxic Cloud: arquivos locais seguem o caminho padrão; toxiccloud:// usa Drive autenticado + cache em disco.
+        val mediaSources = DefaultMediaSourceFactory(
+            CloudPlayback.dataSourceFactory(this),
+            DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)   // seek em MP3 CBR sem índice
+        )
         val player = ExoPlayer.Builder(this, renderers)
+            .setMediaSourceFactory(mediaSources)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)

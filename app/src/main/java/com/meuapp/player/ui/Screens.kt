@@ -69,6 +69,7 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("• Biblioteca: músicas salvas no celular. A permissão só será solicitada ao abrir essa seção.")
+                    Text("• Cloud: conecte sua conta Google e toque as músicas do seu Google Drive pela internet.")
                     Text("• Player e Mesa: controles e ajustes de áudio para músicas locais.")
                 }
             },
@@ -87,6 +88,7 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
                 0 -> LibraryScreen(vm, granted, askPerm) { tab = 1 }
                 1 -> PlayerScreen(vm)
                 2 -> MesaScreen(vm)
+                4 -> CloudScreen(vm) { tab = 1 }
                 else -> UpdateScreen(vm)
             }
         }
@@ -97,6 +99,7 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
 private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
     val items = listOf(
         Triple("Biblioteca", Icons.Rounded.LibraryMusic, 0),
+        Triple("Cloud", Icons.Rounded.Cloud, 4),
         Triple("Player", Icons.Rounded.GraphicEq, 1),
         Triple("Equalizador", Icons.Rounded.Tune, 2),
         Triple("Atualizar", Icons.Rounded.SystemUpdate, 3)
@@ -114,7 +117,7 @@ private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
                     Icon(icon, null, tint = if (sel) Neon.Green else Neon.Dim, modifier = Modifier.size(24.dp))
                     if (i == 3 && hasUpdate) Box(Modifier.size(8.dp).clip(CircleShape).background(Neon.Green).align(Alignment.TopEnd))
                 }
-                Text(label, fontSize = 10.sp, color = if (sel) Neon.Green else Neon.Dim)
+                Text(label, fontSize = 10.sp, color = if (sel) Neon.Green else Neon.Dim, maxLines = 1)
             }
         }
     }
@@ -130,33 +133,33 @@ private fun neonSlider() = SliderDefaults.colors(
 )
 
 @Composable
-private fun neonSwitch() = SwitchDefaults.colors(checkedTrackColor = Neon.Green, checkedThumbColor = Neon.OnGreen)
+internal fun neonSwitch() = SwitchDefaults.colors(checkedTrackColor = Neon.Green, checkedThumbColor = Neon.OnGreen)
 
 @Composable
 fun rememberCover(track: Track?, size: Int): State<Bitmap?> {
     val ctx = LocalContext.current.applicationContext
-    return produceState<Bitmap?>(null, track?.id, size) {
+    return produceState<Bitmap?>(null, track?.id, track?.coverStamp, size) {
         value = if (track == null) null else withContext(Dispatchers.IO) { CoverLoader.load(ctx, track, size) }
     }
 }
 
-private fun fmt(ms: Long) = "%d:%02d".format(ms / 60000, (ms / 1000) % 60)
+internal fun fmt(ms: Long) = "%d:%02d".format(ms / 60000, (ms / 1000) % 60)
 private fun toDb(v: Float) = 20f * log10(max(v, 1e-6f))
 
 @Composable
-private fun PrimaryButton(text: String, onClick: () -> Unit) = Button(
+internal fun PrimaryButton(text: String, onClick: () -> Unit) = Button(
     onClick = onClick, shape = CircleShape,
     colors = ButtonDefaults.buttonColors(containerColor = Neon.Green, contentColor = Neon.OnGreen),
     modifier = Modifier.fillMaxWidth().height(52.dp)
 ) { Text(text, fontWeight = FontWeight.Bold) }
 
 @Composable
-private fun GhostButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) = OutlinedButton(
+internal fun GhostButton(text: String, modifier: Modifier = Modifier, onClick: () -> Unit) = OutlinedButton(
     onClick = onClick, shape = CircleShape, border = BorderStroke(1.dp, Neon.Green), modifier = modifier.height(46.dp)
 ) { Text(text, color = Neon.Green, fontSize = 13.sp, maxLines = 1) }
 
 @Composable
-private fun Chip(text: String, selected: Boolean = false, onClick: () -> Unit) =
+internal fun Chip(text: String, selected: Boolean = false, onClick: () -> Unit) =
     Text(
         text,
         Modifier.clip(CircleShape)
@@ -167,7 +170,7 @@ private fun Chip(text: String, selected: Boolean = false, onClick: () -> Unit) =
     )
 
 @Composable
-private fun Title(text: String) = Text(text, fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
+internal fun Title(text: String) = Text(text, fontSize = 12.sp, letterSpacing = 2.sp, color = Neon.Dim)
 
 // ───────────── Player ─────────────
 @Composable
@@ -881,17 +884,37 @@ private fun PresetSection() {
     var newName by remember { mutableStateOf("") }
     var pending by remember { mutableStateOf("") }
     val saver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) {
-            try { ctx.contentResolver.openOutputStream(uri)?.use { it.write(pending.toByteArray()) }; msg = "Arquivo salvo" }
-            catch (e: Exception) { msg = "Não foi possível salvar o arquivo" }
+        if (uri == null) {
+            msg = "Exportação cancelada."
+        } else {
+            msg = try {
+                val stream = ctx.contentResolver.openOutputStream(uri)
+                    ?: throw IllegalStateException("O Android não abriu o arquivo para gravação.")
+                stream.use { it.write(pending.toByteArray(Charsets.UTF_8)) }
+                "Arquivo exportado com sucesso."
+            } catch (e: Exception) {
+                "Falha ao exportar: ${e.message ?: "erro de gravação"}"
+            }
         }
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            val txt = com.meuapp.player.SafeRead.readText(ctx, uri).orEmpty()
-            msg = if (txt.isEmpty()) "Arquivo vazio, ilegível ou maior que 1 MB" else if (txt.trimStart().startsWith("{")) AudioFx.importJson(txt) else {
-                val n = AudioFx.importApo(txt)
-                if (n > 0) "Importado como EQ paramétrico: $n filtros. ${AudioFx.importNote}" else "Nenhum filtro reconhecido no arquivo"
+        if (uri == null) {
+            msg = "Importação cancelada."
+        } else {
+            msg = try {
+                val txt = com.meuapp.player.SafeRead.readText(ctx, uri)
+                when {
+                    txt == null -> "Não consegui ler o arquivo. Verifique a permissão e se ele tem até 1 MB."
+                    txt.isBlank() -> "O arquivo está vazio."
+                    txt.trimStart().startsWith("{") -> AudioFx.importJson(txt)
+                    else -> {
+                        val n = AudioFx.importApo(txt)
+                        if (n > 0) "Importado como EQ paramétrico: $n filtros. ${AudioFx.importNote}" 
+                        else "Nenhum filtro AutoEQ/Equalizer APO reconhecido. Confira o formato do arquivo."
+                    }
+                }
+            } catch (e: Exception) {
+                "Falha ao importar: ${e.message ?: "erro inesperado"}"
             }
         }
     }
@@ -951,7 +974,11 @@ private fun PresetSection() {
     }
     Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Title("IMPORTAR / EXPORTAR")
-        GhostButton("Importar (AutoEQ, Equalizer APO ou JSON)", Modifier.fillMaxWidth()) { picker.launch(arrayOf("text/plain", "application/json", "*/*")) }
+        GhostButton("Importar (AutoEQ, Equalizer APO ou JSON)", Modifier.fillMaxWidth()) {
+            msg = "Abrindo seletor de arquivos…"
+            try { picker.launch(arrayOf("*/*")) }
+            catch (e: Exception) { msg = "Não consegui abrir o seletor: ${e.message ?: "erro do Android"}" }
+        }
         GhostButton("Exportar ajustes atuais (JSON)", Modifier.fillMaxWidth()) { pending = AudioFx.exportCurrent(); saver.launch("toxic-preset.json") }
         GhostButton("Backup de todos os perfis (JSON)", Modifier.fillMaxWidth()) { pending = AudioFx.exportAll(); saver.launch("toxic-backup.json") }
     }

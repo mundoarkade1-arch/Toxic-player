@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
                 val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
                     granted = allowed || granted
                 }
-                LaunchedEffect(granted) { if (granted) vm.loadTracks() }
+                LaunchedEffect(granted) { if (granted) vm.loadTracks() else vm.skipLocal() }
                 App(vm, granted) { if (!granted) launcher.launch(audioPerm) }
             }
         }

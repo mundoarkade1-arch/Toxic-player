@@ -209,6 +209,9 @@ object AudioFx {
             fa.put(JSONObject().put("t", f.type.name).put("f", f.freq.toDouble()).put("g", f.gainDb.toDouble()).put("q", f.q.toDouble()).put("on", f.enabled))
         }
         put("filters", fa)
+        // O estado mestre precisa acompanhar o perfil: sem isso o preset podia
+        // importar os parâmetros, mas continuar em bypass se o usuário o desligou.
+        put("enabled", enabled)
         put("eqOn", eqOn); put("paramOn", paramOn)
         put("pre", preamp.toDouble()); put("auto", autoHeadroom); put("bal", balance.toDouble())
         put("width", width.toDouble()); put("cross", crossfeed.toDouble()); put("loud", loudness.toDouble())
@@ -240,6 +243,7 @@ object AudioFx {
                 filters.add(sanitize(EqFilter(t, o.f("f", 1000f, 20f, 20000f), o.f("g", 0f, -18f, 18f), o.f("q", 1f, 0.1f, 18f), o.optBoolean("on", true))))
             }
         }
+        enabled = j.optBoolean("enabled", true)
         eqOn = j.optBoolean("eqOn", true); paramOn = j.optBoolean("paramOn", true)
         preamp = j.f("pre", 0f, -12f, 12f); autoHeadroom = j.optBoolean("auto", false); balance = j.f("bal", 0f, -1f, 1f)
         width = j.f("width", 1f, 0f, 2f); crossfeed = j.f("cross", 0f, 0f, 1f); loudness = j.f("loud", 0f, 0f, 10f)
@@ -311,24 +315,36 @@ object AudioFx {
     fun exportAll(): String = JSONObject().put("toxic", "backup").put("custom", customJson()).put("current", snapshot()).toString(2)
 
     /** Importa preset ou backup em JSON. Retorna uma mensagem para o usuário. */
-    fun importJson(text: String): String = try {
+    fun importJson(text: String): String {
+        return try {
+        if (text.isBlank()) return "O arquivo está vazio."
         val j = JSONObject(text)
         val c = j.optJSONObject("custom")
-        if (c != null) {
+        val isBackup = c != null || j.optString("toxic") == "backup"
+        val knownKeys = setOf("toxic", "eq", "filters", "enabled", "eqOn", "paramOn", "pre", "auto", "bal", "width", "cross", "loud", "compOn", "thr", "ratio", "att", "rel", "knee", "mk", "rms", "limOn", "limThr", "limRel", "mbcOn", "mbcRatio", "mbL", "mbM", "mbH", "mbAtt", "mbRel", "mbKnee", "mbMk", "mbX1", "mbX2", "scHpf", "bass", "virt", "tp", "lev", "levT", "dith", "custom", "current")
+        if (j.keys().asSequence().none { it in knownKeys }) return "Este JSON não parece ser um preset ou backup do Toxic Player."
+        if (isBackup) {
+            if (c == null) return "Backup inválido: seção de perfis ausente."
             val mine = customJson(); val keys = c.keys(); var n = 0
             while (keys.hasNext()) {
                 val k = keys.next()
-                val o = c.optJSONObject(k) ?: continue            // ignora entradas que não são perfis
+                val o = c.optJSONObject(k) ?: continue
                 val name = k.trim().take(MAX_NAME)
                 if (name.isEmpty()) continue
                 if (!mine.has(name) && mine.length() >= MAX_CUSTOM) break
                 mine.put(name, o); n++
             }
             writeCustom(mine)
-            j.optJSONObject("current")?.let { restore(it); apply() }
-            "Backup restaurado: $n presets"
-        } else { restore(j); apply(); activeName = "Importado"; "Preset carregado" }
-    } catch (e: Exception) { "Arquivo JSON inválido" }
+            j.optJSONObject("current")?.let { restore(it); apply(); activeName = "Importado" }
+            "Backup restaurado: $n perfis"
+        } else {
+            // Exige ao menos um campo de áudio reconhecido para não aplicar um JSON aleatório como perfil vazio.
+            if (!j.has("eq") && !j.has("filters") && !j.has("pre") && !j.has("eqOn") && !j.has("paramOn"))
+                return "Preset inválido: não encontrei ajustes de áudio."
+            restore(j); apply(); activeName = "Importado"; "Preset carregado com sucesso."
+        }
+        } catch (e: Exception) { "Não foi possível importar: JSON inválido (${e.message ?: "erro de leitura"})." }
+    }
 
     fun storeAB(slot: Int) { if (slot == 0) abA = snapshot() else abB = snapshot() }
     fun recallAB(slot: Int): Boolean {

@@ -71,6 +71,11 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.media3:media3-exoplayer:1.3.1")
     implementation("androidx.media3:media3-session:1.3.1")
+    // Toxic Cloud: cache de streaming (SimpleCache) e fonte de dados HTTP com autenticação.
+    implementation("androidx.media3:media3-datasource:1.3.1")
+    implementation("androidx.media3:media3-database:1.3.1")
+    // Toxic Cloud: autorização OAuth 2.0 do Google (Identity AuthorizationClient). Sem Client Secret no app.
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
