@@ -1,0 +1,104 @@
+{
+  "toxic": "preset",
+  "enabled": true,
+  "eq": [
+    1.0,
+    2.0,
+    2.0,
+    -1.5,
+    -1.0,
+    0.5,
+    1.0,
+    1.5,
+    1.0,
+    0.5
+  ],
+  "filters": [
+    {
+      "t": "HIGH_PASS",
+      "f": 48,
+      "g": 0,
+      "q": 0.707,
+      "on": true
+    },
+    {
+      "t": "LOW_SHELF",
+      "f": 85,
+      "g": 2.0,
+      "q": 0.707,
+      "on": true
+    },
+    {
+      "t": "PEAK",
+      "f": 125,
+      "g": 1.0,
+      "q": 1.0,
+      "on": true
+    },
+    {
+      "t": "PEAK",
+      "f": 280,
+      "g": -2.0,
+      "q": 1.1,
+      "on": true
+    },
+    {
+      "t": "PEAK",
+      "f": 1800,
+      "g": 1.0,
+      "q": 0.9,
+      "on": true
+    },
+    {
+      "t": "PEAK",
+      "f": 3500,
+      "g": 1.2,
+      "q": 1.0,
+      "on": true
+    },
+    {
+      "t": "HIGH_SHELF",
+      "f": 9500,
+      "g": 1.0,
+      "q": 0.707,
+      "on": true
+    }
+  ],
+  "eqOn": true,
+  "paramOn": true,
+  "pre": -3.5,
+  "auto": true,
+  "bal": 0.0,
+  "width": 1.0,
+  "cross": 0.0,
+  "loud": 0.0,
+  "compOn": true,
+  "thr": -19.0,
+  "ratio": 1.7,
+  "att": 18.0,
+  "rel": 180.0,
+  "knee": 9.0,
+  "mk": 0.0,
+  "rms": true,
+  "limOn": true,
+  "limThr": -1.5,
+  "limRel": 100.0,
+  "mbcOn": true,
+  "mbL": -20.0,
+  "mbM": -22.0,
+  "mbH": -24.0,
+  "mbcRatio": 1.5,
+  "mbAtt": 25.0,
+  "mbRel": 220.0,
+  "mbKnee": 9.0,
+  "mbMk": 0.0,
+  "mbX1": 180.0,
+  "mbX2": 3200.0,
+  "scHpf": 80.0,
+  "bass": 0.0,
+  "virt": 0.0,
+  "tp": true,
+  "lev": false,
+  "levT": -18.0,
+  "dith": true
+}
