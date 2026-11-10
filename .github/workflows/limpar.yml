@@ -8,11 +8,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Conferir que o app de verdade existe
+        run: |
+          test -d app/src/main/java/com/meuapp/player || { echo "::error::Pasta app/ não encontrada. Nada foi apagado."; exit 1; }
+          test -d docs || { echo "::error::Pasta docs/ não encontrada. Nada foi apagado."; exit 1; }
+
       - name: Apagar arquivos velhos
         run: |
           git config user.name "limpeza"
           git config user.email "limpeza@users.noreply.github.com"
+          # Cópias soltas na raiz (o código oficial fica em app/src/main/java/)
           git rm -f --ignore-unmatch AUDITORIA_FASE_C.md AudioFx.kt Biquad.kt BiquadTest.kt COLE-NO-GITHUB_build.yml DspCore.kt DspCoreTest.kt DspProcessor.kt Fft.kt FftTest.kt MainActivity.kt PlaybackService.kt PlayerViewModel.kt Screens.kt Track.kt
-          git rm -rf --ignore-unmatch Toxic-player docs
+          # Cópia antiga do projeto inteiro. A pasta docs/ NÃO é apagada: é a documentação ativa.
+          git rm -rf --ignore-unmatch Toxic-player-main
           git commit -m "Limpeza dos arquivos velhos [skip ci]" || echo "nada para apagar"
           git push
