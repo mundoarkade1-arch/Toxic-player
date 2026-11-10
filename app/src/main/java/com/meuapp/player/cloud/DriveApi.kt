@@ -40,7 +40,7 @@ class DriveApi(private val tokens: TokenProvider = DefaultTokens) {
      */
     fun listAudio(pageToken: String?): FilesPage {
         val q = "trashed=false and (mimeType contains 'audio/' or mimeType='application/ogg' or mimeType='application/octet-stream')"
-        val fields = "nextPageToken,files(id,name,mimeType,size,modifiedTime,md5Checksum,trashed)"
+        val fields = "nextPageToken,files(id,name,mimeType,size,modifiedTime,createdTime,md5Checksum,trashed)"
         val sb = StringBuilder("/files?q=").append(enc(q))
             .append("&fields=").append(enc(fields))
             .append("&pageSize=").append(CloudConfig.PAGE_SIZE)
@@ -56,7 +56,7 @@ class DriveApi(private val tokens: TokenProvider = DefaultTokens) {
     }
 
     fun changes(pageToken: String): ChangesPage {
-        val fields = "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,size,modifiedTime,md5Checksum,trashed))"
+        val fields = "nextPageToken,newStartPageToken,changes(fileId,removed,file(id,name,mimeType,size,modifiedTime,createdTime,md5Checksum,trashed))"
         val path = "/changes?pageToken=" + enc(pageToken) + "&fields=" + enc(fields) +
             "&pageSize=" + CloudConfig.PAGE_SIZE + "&includeRemoved=true&spaces=drive&restrictToMyDrive=true"
         return DriveJson.parseChangesPage(getText(path))

@@ -49,6 +49,9 @@ class CloudRepository(ctx: Context, private val api: DriveApi = DriveApi()) {
 
     fun snapshot(): List<CloudTrack> = synchronized(lock) { map.values.toList() }
 
+    /** Índice de versão antiga (sem data de adição): pede uma varredura completa para completar os dados. */
+    fun needsMigration(): Boolean = synchronized(lock) { map.values.any { it.addedMs == 0L } }
+
     private fun persist() { val s = snapshot(); store.save(s) }
 
     /** Esquece a biblioteca local (desconexão / troca de conta). Não apaga nada no Drive. */
@@ -99,6 +102,13 @@ class CloudRepository(ctx: Context, private val api: DriveApi = DriveApi()) {
                     onProgress(SyncProgress.Listing(all.size))
                     page = p.nextPageToken
                 } while (page != null)
+                // Completa a data de adição de faixas de índices antigos (sem reler tags).
+                synchronized(lock) {
+                    for (f in all) {
+                        val l = map[f.id] ?: continue
+                        if (l.addedMs == 0L) { val a = CloudTrack.addedOf(f); if (a > 0) map[f.id] = l.copy(addedMs = a) }
+                    }
+                }
                 plan = SyncPlanner.planFull(synchronized(lock) { HashMap(map) }, all)
                 newToken = startToken
             }
@@ -193,6 +203,7 @@ class CloudRepository(ctx: Context, private val api: DriveApi = DriveApi()) {
                 title = tags.title ?: cur.title,
                 artist = tags.artist ?: tags.albumArtist ?: cur.artist,
                 album = tags.album ?: cur.album,
+                genre = com.meuapp.player.cloud.tags.Genres.clean(tags.genre),
                 durationMs = if (tags.durationMs > 0) tags.durationMs else cur.durationMs,
                 hasCover = hasCover || (cur.hasCover && CloudStorage.coverFile(t.id).exists()),
                 metaState = MetaState.DONE

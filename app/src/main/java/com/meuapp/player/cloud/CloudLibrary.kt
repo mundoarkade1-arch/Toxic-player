@@ -9,6 +9,10 @@ object CloudLibrary {
     const val SORT_ALBUM = 2
     const val SORT_DURATION = 3
     const val SORT_SIZE = 4
+    const val SORT_RECENT = 5
+    const val NO_GENRE = "Sem gênero"
+
+    private fun genreOf(t: CloudTrack) = if (t.genre.isBlank()) NO_GENRE else t.genre
 
     data class Group(val key: String, val name: String, val count: Int)
 
@@ -31,6 +35,7 @@ object CloudLibrary {
                     group == null -> true
                     group.startsWith("A:") -> t.artist == group.drop(2)
                     group.startsWith("B:") -> t.album == group.drop(2)
+                    group.startsWith("G:") -> normalize(genreOf(t)) == normalize(group.drop(2))
                     else -> true
                 } &&
                 (q.isEmpty() || normalize(t.title).contains(q) || normalize(t.artist).contains(q) ||
@@ -43,6 +48,7 @@ object CloudLibrary {
         SORT_ALBUM -> list.sortedWith(compareBy({ normalize(it.album) }, { normalize(it.title) }))
         SORT_DURATION -> list.sortedByDescending { it.durationMs }
         SORT_SIZE -> list.sortedByDescending { it.size }
+        SORT_RECENT -> list.sortedWith(compareByDescending<CloudTrack> { it.addedMs }.thenBy { normalize(it.title) })
         else -> list.sortedBy { normalize(it.title) }
     }
 
@@ -51,6 +57,14 @@ object CloudLibrary {
 
     fun albums(list: List<CloudTrack>): List<Group> =
         list.groupBy { it.album }.map { (k, l) -> Group("B:$k", k, l.size) }.sortedBy { normalize(it.name) }
+
+    /** Gêneros presentes (sem diferenciar maiúsculas/acentos); "Sem gênero" fica por último. */
+    fun genres(list: List<CloudTrack>): List<Group> =
+        list.groupBy { normalize(genreOf(it)) }.map { (_, l) ->
+            val names = l.map { genreOf(it) }.distinct()
+            val name = names.firstOrNull { it != it.lowercase() && it != it.uppercase() } ?: names.first()
+            Group("G:$name", name, l.size)
+        }.sortedWith(compareBy({ it.name == NO_GENRE }, { normalize(it.name) }))
 
     fun formatsPresent(list: List<CloudTrack>): List<CloudFormat> =
         list.map { it.format }.distinct().sortedBy { it.ordinal }

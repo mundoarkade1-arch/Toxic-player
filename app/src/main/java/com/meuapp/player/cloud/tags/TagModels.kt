@@ -24,6 +24,7 @@ class TrackTags(
     var artist: String? = null,
     var album: String? = null,
     var albumArtist: String? = null,
+    var genre: String? = null,
     var durationMs: Long = 0L,
     var cover: ByteArray? = null
 ) {
@@ -57,6 +58,38 @@ internal object Bytes {
         var i = b.size - s.length
         while (i >= 0) { if (startsWith(b, i, s)) return i; i-- }
         return -1
+    }
+}
+
+/** Normalização de gênero: converte códigos ID3v1 ("(17)", "17") em nomes e arruma a capitalização. */
+object Genres {
+    private val ID3V1 = arrayOf(
+        "Blues", "Classic Rock", "Country", "Dance", "Disco", "Funk", "Grunge", "Hip-Hop", "Jazz", "Metal", "New Age", "Oldies",
+        "Other", "Pop", "R&B", "Rap", "Reggae", "Rock", "Techno", "Industrial", "Alternative", "Ska", "Death Metal", "Pranks",
+        "Soundtrack", "Euro-Techno", "Ambient", "Trip-Hop", "Vocal", "Jazz+Funk", "Fusion", "Trance", "Classical", "Instrumental",
+        "Acid", "House", "Game", "Sound Clip", "Gospel", "Noise", "AlternRock", "Bass", "Soul", "Punk", "Space", "Meditative",
+        "Instrumental Pop", "Instrumental Rock", "Ethnic", "Gothic", "Darkwave", "Techno-Industrial", "Electronic", "Pop-Folk",
+        "Eurodance", "Dream", "Southern Rock", "Comedy", "Cult", "Gangsta", "Top 40", "Christian Rap", "Pop/Funk", "Jungle",
+        "Native American", "Cabaret", "New Wave", "Psychadelic", "Rave", "Showtunes", "Trailer", "Lo-Fi", "Tribal", "Acid Punk",
+        "Acid Jazz", "Polka", "Retro", "Musical", "Rock & Roll", "Hard Rock"
+    )
+
+    fun byIndex(i: Int): String = ID3V1.getOrNull(i) ?: ""
+
+    /** Devolve o gênero limpo ou "" quando não há. */
+    fun clean(raw: String?): String {
+        var s = raw?.substringBefore('\u0000')?.trim() ?: return ""
+        val m = Regex("^\\((\\d{1,3})\\)(.*)$").find(s)
+        if (m != null) {
+            val rest = m.groupValues[2].trim()
+            s = if (rest.isNotEmpty()) rest else byIndex(m.groupValues[1].toInt())
+        } else if (s.isNotEmpty() && s.all { it.isDigit() } && s.length <= 3) {
+            s = byIndex(s.toInt())
+        }
+        s = s.substringBefore(';').trim()
+        if (s.isEmpty()) return ""
+        if (s == s.lowercase()) s = s.split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }
+        return s.take(40)
     }
 }
 

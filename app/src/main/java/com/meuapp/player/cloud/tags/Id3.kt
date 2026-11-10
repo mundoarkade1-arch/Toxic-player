@@ -68,6 +68,7 @@ internal object Id3 {
                 "TIT2", "TT2" -> if (into.title == null) into.title = text(data)
                 "TPE1", "TP1" -> if (into.artist == null) into.artist = text(data)
                 "TALB", "TAL" -> if (into.album == null) into.album = text(data)
+                "TCON", "TCO" -> if (into.genre == null) into.genre = text(data)
                 "TPE2", "TP2" -> if (into.albumArtist == null) into.albumArtist = text(data)
                 "APIC", "PIC" -> {
                     val pic = parsePicture(data, ver == 2)
@@ -156,6 +157,7 @@ internal object Id3 {
         if (into.title == null) into.title = field(3, 30)
         if (into.artist == null) into.artist = field(33, 30)
         if (into.album == null) into.album = field(63, 30)
+        if (into.genre == null) { val g = Bytes.u8(b, 127); if (g != 255) into.genre = Genres.byIndex(g).ifBlank { null } }
     }
 }
 

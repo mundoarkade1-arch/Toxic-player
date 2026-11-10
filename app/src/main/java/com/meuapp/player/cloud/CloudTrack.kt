@@ -19,7 +19,9 @@ data class CloudTrack(
     val modifiedTime: String,
     val md5: String?,
     val hasCover: Boolean,
-    val metaState: Int
+    val metaState: Int,
+    val genre: String = "",          // "" = sem gênero nas tags
+    val addedMs: Long = 0L            // quando o arquivo entrou no Drive (0 = desconhecido)
 ) {
     /** Id numérico estável e negativo: nunca colide com os ids positivos do MediaStore e serve para playlists/favoritas. */
     val numericId: Long get() = numericIdFor(id)
@@ -28,6 +30,7 @@ data class CloudTrack(
         .put("id", id).put("fn", fileName).put("t", title).put("a", artist).put("al", album)
         .put("d", durationMs).put("s", size).put("f", format.name).put("m", modifiedTime)
         .put("h", md5 ?: JSONObject.NULL).put("c", hasCover).put("ms", metaState)
+        .put("g", genre).put("ad", addedMs)
 
     companion object {
         const val UNKNOWN_ARTIST = "Artista desconhecido"
@@ -45,7 +48,10 @@ data class CloudTrack(
             return CloudTrack(
                 id, o.optString("fn"), o.optString("t"), o.optString("a", UNKNOWN_ARTIST), o.optString("al", UNKNOWN_ALBUM),
                 o.optLong("d"), o.optLong("s"), fmt, o.optString("m"),
-                if (o.isNull("h")) null else o.optString("h").ifBlank { null }, o.optBoolean("c"), o.optInt("ms")
+                if (o.isNull("h")) null else o.optString("h").ifBlank { null }, o.optBoolean("c"),
+                // Índice antigo (sem gênero): relê as tags uma vez para descobrir o gênero.
+                if (o.has("g")) o.optInt("ms") else MetaState.PENDING,
+                o.optString("g"), o.optLong("ad")
             )
         }
 
@@ -53,7 +59,13 @@ data class CloudTrack(
         fun fromDrive(f: DriveFile): CloudTrack {
             val p = com.meuapp.player.cloud.tags.NameParser.parse(f.name)
             return CloudTrack(f.id, f.name, p.title, p.artist ?: UNKNOWN_ARTIST, UNKNOWN_ALBUM, 0L, f.size, f.format,
-                f.modifiedTime, f.md5, false, MetaState.PENDING)
+                f.modifiedTime, f.md5, false, MetaState.PENDING, "", addedOf(f))
+        }
+
+        /** Data em que o arquivo entrou no Drive (createdTime; se faltar, modifiedTime). 0 se não der para ler. */
+        fun addedOf(f: DriveFile): Long {
+            fun parse(s: String) = try { java.time.Instant.parse(s).toEpochMilli() } catch (e: Exception) { 0L }
+            return parse(f.createdTime).takeIf { it > 0 } ?: parse(f.modifiedTime)
         }
 
         fun listToJson(list: Collection<CloudTrack>): String {

@@ -143,3 +143,42 @@ class CloudLogicTest {
         try { api.about(); fail() } catch (e: CloudException) { assertEquals(CloudErrorKind.NOT_CONNECTED, e.kind) }
     }
 }
+
+class GenreAndRecentTest {
+    private fun ct(id: String, genre: String, added: Long, title: String = id) =
+        CloudTrack(id, "$id.mp3", title, "A", "B", 0, 100, CloudFormat.MP3, "t", "m", false, MetaState.DONE, genre, added)
+
+    @Test fun cleansGenres() {
+        val g = com.meuapp.player.cloud.tags.Genres
+        assertEquals("Rock", g.clean("(17)"))
+        assertEquals("Funk", g.clean("5"))
+        assertEquals("Rock", g.clean("(17)Rock"))
+        assertEquals("Funk", g.clean("funk"))
+        assertEquals("Funk", g.clean("Funk;Rap"))
+        assertEquals("R&B", g.clean("R&B"))
+        assertEquals("", g.clean("  "))
+        assertEquals("", g.clean(null))
+    }
+    @Test fun groupsGenresIgnoringCaseAndSortsNoGenreLast() {
+        val l = listOf(ct("1", "Funk", 1), ct("2", "funk", 2), ct("3", "Rock", 3), ct("4", "", 4))
+        val gs = CloudLibrary.genres(l)
+        assertEquals(listOf("Funk", "Rock", "Sem gênero"), gs.map { it.name })
+        assertEquals(2, gs[0].count)
+        assertEquals(setOf("1", "2"), CloudLibrary.filter(l, group = "G:Funk").map { it.id }.toSet())
+        assertEquals(listOf("4"), CloudLibrary.filter(l, group = "G:Sem gênero").map { it.id })
+    }
+    @Test fun recentFirst() {
+        val l = listOf(ct("old", "Rock", 100), ct("new", "Rock", 300), ct("mid", "Rock", 200))
+        assertEquals(listOf("new", "mid", "old"), CloudLibrary.sort(l, CloudLibrary.SORT_RECENT).map { it.id })
+    }
+    @Test fun addedDateFromDrive() {
+        val f = DriveFile("a", "a.mp3", "audio/mpeg", 10, "2024-01-02T00:00:00.000Z", null, CloudFormat.MP3, "2024-01-01T00:00:00.000Z")
+        assertEquals(java.time.Instant.parse("2024-01-01T00:00:00Z").toEpochMilli(), CloudTrack.addedOf(f))
+        assertEquals(0L, CloudTrack.addedOf(f.copy(createdTime = "", modifiedTime = "")))
+    }
+    @Test fun oldIndexWithoutGenreIsRequeued() {
+        val old = org.json.JSONObject("""{"v":1,"tracks":[{"id":"x","fn":"x.mp3","t":"x","a":"A","al":"B","d":1,"s":5,"f":"MP3","m":"t","c":false,"ms":1}]}""")
+        val t = CloudTrack.listFromJson(old.toString()).single()
+        assertEquals(MetaState.PENDING, t.metaState); assertEquals(0L, t.addedMs)
+    }
+}
