@@ -1,0 +1,24 @@
+# Segredos: NUNCA enviar ao GitHub
+*.jks
+*.keystore
+client_secret*.json
+google-services.json
+local.properties
+.env
+.env.*
+
+# Build e Gradle
+build/
+.gradle/
+*.apk
+*.aab
+*.ap_
+
+# IDE e sistema
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+captures/
+.externalNativeBuild/
+.cxx/
