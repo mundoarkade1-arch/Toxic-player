@@ -112,17 +112,19 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
     val open = cloud.openGroup
 
     val base = remember(cloud.tracks) { cloud.tracks }
-    val filtered = remember(base, cloud.query, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, open, cloud.sortMode) {
+    // Listas de gênero e a visão "Recentes" mostram sempre as músicas mais novas do Drive no topo.
+    val effSort = if (open?.startsWith("G:") == true || cloud.viewMode == 4) CloudLibrary.SORT_RECENT else cloud.sortMode
+    val filtered = remember(base, cloud.query, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, open, effSort) {
         CloudLibrary.sort(
             CloudLibrary.filter(base, cloud.query, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, open),
-            cloud.sortMode
+            effSort
         )
     }
     val searching = cloud.query.isNotBlank()
-    val showGroups = open == null && !searching && cloud.viewMode != 0
+    val showGroups = open == null && !searching && cloud.viewMode in 1..3
     val groups = remember(base, cloud.viewMode, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds) {
         val pool = CloudLibrary.filter(base, "", cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, null)
-        if (cloud.viewMode == 1) CloudLibrary.artists(pool) else CloudLibrary.albums(pool)
+        when (cloud.viewMode) { 1 -> CloudLibrary.artists(pool); 2 -> CloudLibrary.albums(pool); else -> CloudLibrary.genres(pool) }
     }
     val playerList = remember(filtered, cloud.playerTracks) { filtered.mapNotNull { cloud.trackByNumericId(it.numericId) } }
 
@@ -168,7 +170,7 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
             }
         } else if (showGroups) {
             items(groups, key = { it.key }) { g ->
-                GroupCard(g.name, g.count, if (cloud.viewMode == 1) Icons.Rounded.Person else Icons.Rounded.Album) { cloud.enterGroup(g.key) }
+                GroupCard(g.name, g.count, when (cloud.viewMode) { 1 -> Icons.Rounded.Person; 2 -> Icons.Rounded.Album; else -> Icons.Rounded.LibraryMusic }) { cloud.enterGroup(g.key) }
             }
         } else if (filtered.isEmpty()) {
             item { Text("Nada encontrado com estes filtros.", color = Neon.Dim, modifier = Modifier.padding(vertical = 8.dp)) }
@@ -269,6 +271,8 @@ private fun Filters(cloud: CloudManager, all: List<CloudTrack>) {
             Chip("Músicas", cloud.viewMode == 0) { cloud.changeView(0) }
             Chip("Artistas", cloud.viewMode == 1) { cloud.changeView(1) }
             Chip("Álbuns", cloud.viewMode == 2) { cloud.changeView(2) }
+            Chip("Gêneros", cloud.viewMode == 3) { cloud.changeView(3) }
+            Chip("Recentes", cloud.viewMode == 4) { cloud.changeView(4) }
             Chip("Offline", cloud.offlineOnly) { cloud.toggleOfflineOnly() }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -277,6 +281,7 @@ private fun Filters(cloud: CloudManager, all: List<CloudTrack>) {
             Chip("Álbum", cloud.sortMode == CloudLibrary.SORT_ALBUM) { cloud.changeSort(CloudLibrary.SORT_ALBUM) }
             Chip("Duração", cloud.sortMode == CloudLibrary.SORT_DURATION) { cloud.changeSort(CloudLibrary.SORT_DURATION) }
             Chip("Tamanho", cloud.sortMode == CloudLibrary.SORT_SIZE) { cloud.changeSort(CloudLibrary.SORT_SIZE) }
+            Chip("Recentes", cloud.sortMode == CloudLibrary.SORT_RECENT) { cloud.changeSort(CloudLibrary.SORT_RECENT) }
         }
         val formats = remember(all) { CloudLibrary.formatsPresent(all) }
         if (formats.size > 1) {
@@ -307,6 +312,7 @@ private fun CloudTrackRow(vm: PlayerViewModel, cloud: CloudManager, t: CloudTrac
     val offline = t.id in cloud.offlineIds
     val dl = cloud.downloads[t.id]
     var menu by remember { mutableStateOf(false) }
+    var addDialog by remember { mutableStateOf(false) }
     val fav = vm.isFav(t.numericId)
     Row(
         Modifier.fillMaxWidth().glass(18.dp).clickable(onClick = onPlay).padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 2.dp),
@@ -354,11 +360,29 @@ private fun CloudTrackRow(vm: PlayerViewModel, cloud: CloudManager, t: CloudTrac
                     DropdownMenuItem(text = { Text("Tocar a seguir") }, onClick = { vm.playNext(pt); menu = false })
                     DropdownMenuItem(text = { Text("Adicionar à fila") }, onClick = { vm.addToQueue(pt); menu = false })
                 }
+                DropdownMenuItem(text = { Text("Adicionar à lista...") }, onClick = { addDialog = true; menu = false })
                 if (offline) DropdownMenuItem(text = { Text("Remover download") }, onClick = { cloud.removeOffline(t.id); menu = false })
                 else if (dl == null) DropdownMenuItem(text = { Text("Baixar para offline") }, onClick = { cloud.download(t); menu = false })
             }
         }
     }
+    if (addDialog) AddToListDialog(vm, t) { addDialog = false }
+}
+
+@Composable
+private fun AddToListDialog(vm: PlayerViewModel, t: CloudTrack, onClose: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Adicionar à lista") },
+        text = {
+            Column {
+                vm.playlists.keys.sorted().forEach { n ->
+                    Text(n, Modifier.fillMaxWidth().clickable { vm.addToPlaylist(n, t.numericId); onClose() }.padding(12.dp))
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Fechar") } }
+    )
 }
 
 @Composable

@@ -122,3 +122,15 @@ class TagReaderTest {
         assertTrue("leituras: ${src.reads}", src.reads <= 4)
     }
 }
+
+class GenreTagTest {
+    private fun be32(v: Int) = byteArrayOf((v ushr 24).toByte(), (v ushr 16).toByte(), (v ushr 8).toByte(), v.toByte())
+    @Test fun id3v2GenreTcon() {
+        val body = byteArrayOf(3) + "(5)".toByteArray()
+        val frame = "TCON".toByteArray() + be32(body.size) + byteArrayOf(0, 0) + body
+        val size = frame.size
+        val tag = "ID3".toByteArray() + byteArrayOf(3, 0, 0) + byteArrayOf(0, 0, ((size shr 7) and 0x7F).toByte(), (size and 0x7F).toByte()) + frame
+        val t = TagReader.read(CloudFormat.MP3, ByteArraySource(tag + ByteArray(600)))
+        assertEquals("Funk", com.meuapp.player.cloud.tags.Genres.clean(t.genre))
+    }
+}

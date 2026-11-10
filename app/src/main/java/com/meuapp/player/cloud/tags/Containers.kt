@@ -35,6 +35,7 @@ internal object VorbisComments {
         if (into.artist == null) into.artist = f("ARTIST")
         if (into.album == null) into.album = f("ALBUM")
         if (into.albumArtist == null) into.albumArtist = f("ALBUMARTIST")
+        if (into.genre == null) into.genre = f("GENRE")
     }
 
     /** Bloco PICTURE do FLAC (também usado em base64 pelo Ogg). Devolve (tipo, bytes). */
@@ -230,6 +231,9 @@ internal object Mp4 {
                 "\u00A9ART" -> if (into.artist == null) into.artist = str(b, payloadStart, data.end)
                 "\u00A9alb" -> if (into.album == null) into.album = str(b, payloadStart, data.end)
                 "aART" -> if (into.albumArtist == null) into.albumArtist = str(b, payloadStart, data.end)
+                "\u00A9gen" -> if (into.genre == null) into.genre = str(b, payloadStart, data.end)
+                "gnre" -> if (into.genre == null && data.end - payloadStart >= 2)
+                    into.genre = Genres.byIndex(Bytes.be16(b, payloadStart) - 1).ifBlank { null }
                 "covr" -> if ((flags == 13 || flags == 14) && data.end - payloadStart in 1..CloudConfig.MAX_COVER_BYTES && into.cover == null)
                     into.cover = b.copyOfRange(payloadStart, data.end)
             }
@@ -280,6 +284,7 @@ internal object Wav {
                 "INAM" -> if (into.title == null) into.title = v
                 "IART" -> if (into.artist == null) into.artist = v
                 "IPRD" -> if (into.album == null) into.album = v
+                "IGNR" -> if (into.genre == null) into.genre = v
             }
             p = s + len + (len and 1)
         }

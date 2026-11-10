@@ -94,6 +94,8 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
             val off = CloudStorage.offlineIds()
             withContext(Dispatchers.Main) { applyTracks(l); offlineIds = off; indexLoaded = true; onIndexLoaded?.invoke() }
             refreshUsage()
+            // Índice de versão antiga: uma varredura completa traz a data de adição e releitura traz o gênero.
+            if (CloudAuth.connected && repo.needsMigration()) doSync(full = true)
         }
     }
 

@@ -10,7 +10,8 @@ data class DriveFile(
     val size: Long,
     val modifiedTime: String,
     val md5: String?,
-    val format: CloudFormat
+    val format: CloudFormat,
+    val createdTime: String = ""
 )
 
 /** Uma entrada do feed de mudanças (changes.list). [file] é null quando o arquivo foi removido ou não é áudio. */
@@ -33,7 +34,7 @@ object DriveJson {
         // O Drive devolve "size" como texto; ausente em arquivos nativos do Google (que não são áudio).
         val size = o.optString("size").toLongOrNull() ?: return null
         if (size <= 0L) return null
-        return DriveFile(id, name, mime, size, o.optString("modifiedTime"), o.optString("md5Checksum").ifBlank { null }, fmt)
+        return DriveFile(id, name, mime, size, o.optString("modifiedTime"), o.optString("md5Checksum").ifBlank { null }, fmt, o.optString("createdTime"))
     }
 
     fun parseFilesPage(text: String): FilesPage {
