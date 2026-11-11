@@ -43,6 +43,7 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
     private var byNumeric: Map<Long, Track> = emptyMap()
     private var byId: Map<String, CloudTrack> = emptyMap()
     var offlineIds by mutableStateOf<Set<String>>(emptySet()); private set
+    var folderPaths by mutableStateOf<Map<String, String>>(emptyMap()); private set
     val downloads = mutableStateMapOf<String, Float>()
     private val downloadJobs = HashMap<String, Job>()
 
@@ -101,6 +102,7 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
 
     private fun applyTracks(l: List<CloudTrack>) {
         tracks = l
+        folderPaths = repo.pathsFor(l)
         byId = l.associateBy { it.id }
         val pt = l.map(::toTrack)
         playerTracks = pt

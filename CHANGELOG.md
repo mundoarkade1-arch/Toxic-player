@@ -11,3 +11,5 @@
 ### Adicionado (gêneros e recentes)
 - Aba Cloud: visões **Gêneros** (listas automáticas por gênero das tags, ex.: Funk, Rock) e **Recentes**; essas listas mostram sempre as músicas mais novas do Drive no topo. Menu da música ganhou "Adicionar à lista...".
 - Índices antigos são migrados sozinhos (varredura completa + releitura de tags uma vez).
+- Aba Cloud: visão **Pastas** (pastas do Drive com subpastas; tocar uma pasta toca também as subpastas). A busca também encontra pelo nome da pasta. Migração automática do índice (schema 3).
+- Aba Cloud agora abre numa **tela inicial** estilo plataforma de streaming: saudação, atalhos (curtidas, recentes, aleatório, suas playlists), "Feito para você" (Mix do dia, Mix por gênero e por artista), carrossel de recentes, seus artistas, gêneros e "Redescubra". O botão "Biblioteca" leva à navegação completa.

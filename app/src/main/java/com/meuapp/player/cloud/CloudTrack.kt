@@ -21,7 +21,8 @@ data class CloudTrack(
     val hasCover: Boolean,
     val metaState: Int,
     val genre: String = "",          // "" = sem gênero nas tags
-    val addedMs: Long = 0L            // quando o arquivo entrou no Drive (0 = desconhecido)
+    val addedMs: Long = 0L,           // quando o arquivo entrou no Drive (0 = desconhecido)
+    val parentId: String = ""         // pasta do Drive
 ) {
     /** Id numérico estável e negativo: nunca colide com os ids positivos do MediaStore e serve para playlists/favoritas. */
     val numericId: Long get() = numericIdFor(id)
@@ -30,7 +31,7 @@ data class CloudTrack(
         .put("id", id).put("fn", fileName).put("t", title).put("a", artist).put("al", album)
         .put("d", durationMs).put("s", size).put("f", format.name).put("m", modifiedTime)
         .put("h", md5 ?: JSONObject.NULL).put("c", hasCover).put("ms", metaState)
-        .put("g", genre).put("ad", addedMs)
+        .put("g", genre).put("ad", addedMs).put("p", parentId)
 
     companion object {
         const val UNKNOWN_ARTIST = "Artista desconhecido"
@@ -51,7 +52,7 @@ data class CloudTrack(
                 if (o.isNull("h")) null else o.optString("h").ifBlank { null }, o.optBoolean("c"),
                 // Índice antigo (sem gênero): relê as tags uma vez para descobrir o gênero.
                 if (o.has("g")) o.optInt("ms") else MetaState.PENDING,
-                o.optString("g"), o.optLong("ad")
+                o.optString("g"), o.optLong("ad"), o.optString("p")
             )
         }
 
@@ -59,7 +60,7 @@ data class CloudTrack(
         fun fromDrive(f: DriveFile): CloudTrack {
             val p = com.meuapp.player.cloud.tags.NameParser.parse(f.name)
             return CloudTrack(f.id, f.name, p.title, p.artist ?: UNKNOWN_ARTIST, UNKNOWN_ALBUM, 0L, f.size, f.format,
-                f.modifiedTime, f.md5, false, MetaState.PENDING, "", addedOf(f))
+                f.modifiedTime, f.md5, false, MetaState.PENDING, "", addedOf(f), f.parentId)
         }
 
         /** Data em que o arquivo entrou no Drive (createdTime; se faltar, modifiedTime). 0 se não der para ler. */

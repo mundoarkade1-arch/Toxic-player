@@ -182,3 +182,61 @@ class GenreAndRecentTest {
         assertEquals(MetaState.PENDING, t.metaState); assertEquals(0L, t.addedMs)
     }
 }
+
+class FolderTest {
+    private fun fo(id: String, name: String, parent: String) = DriveFolder(id, name, parent)
+    private fun ct(id: String, parent: String, title: String = id) =
+        CloudTrack(id, "$id.mp3", title, "A", "B", 0, 100, CloudFormat.MP3, "t", "m", false, MetaState.DONE, "", 1, parent)
+
+    private val folders = mapOf("m" to fo("m", "Música", "root"), "r" to fo("r", "Rock", "m"), "f" to fo("f", "Funk", "m"))
+
+    @Test fun buildsPaths() {
+        assertEquals("Música/Rock", CloudFolders.pathOf("r", folders))
+        assertEquals("Música", CloudFolders.pathOf("m", folders))
+        assertEquals("Meu Drive", CloudFolders.pathOf("root", folders))
+        assertEquals("Outros", CloudFolders.pathOf("", folders))
+    }
+    @Test fun survivesFolderCycles() {
+        val loop = mapOf("a" to fo("a", "A", "b"), "b" to fo("b", "B", "a"))
+        assertTrue(CloudFolders.pathOf("a", loop).isNotEmpty())
+    }
+    @Test fun foldersIncludeSubfoldersInCountsAndFilter() {
+        val l = listOf(ct("1", "r"), ct("2", "f"), ct("3", "m"))
+        val paths = l.map { it.parentId }.distinct().associateWith { CloudFolders.pathOf(it, folders) }
+        val g = CloudLibrary.folders(l, paths)
+        assertEquals(listOf("Música", "Música/Funk", "Música/Rock"), g.map { it.key.drop(2) })
+        assertEquals(3, g[0].count)
+        assertEquals(setOf("1", "2", "3"), CloudLibrary.filter(l, group = "F:Música", paths = paths).map { it.id }.toSet())
+        assertEquals(listOf("1"), CloudLibrary.filter(l, group = "F:Música/Rock", paths = paths).map { it.id })
+        assertEquals(listOf("2"), CloudLibrary.filter(l, query = "funk", paths = paths).map { it.id })
+    }
+    @Test fun parsesParentsAndFolders() {
+        val f = DriveJson.parseFilesPage("""{"files":[{"id":"a","name":"a.mp3","mimeType":"audio/mpeg","size":"5","parents":["p1"]}]}""").files.single()
+        assertEquals("p1", f.parentId)
+        val (list, next) = DriveJson.parseFoldersPage("""{"nextPageToken":"n","files":[{"id":"p1","name":"Rock","parents":["m"]},{"id":"bad id","name":"x"}]}""")
+        assertEquals(listOf(DriveFolder("p1", "Rock", "m")), list); assertEquals("n", next)
+    }
+}
+
+class HomeLogicTest {
+    private fun ct(id: String, artist: String, genre: String = "") =
+        CloudTrack(id, "$id.mp3", id, artist, "B", 0, 1, CloudFormat.MP3, "t", "m", false, MetaState.DONE, genre, 1, "")
+    private val l = listOf(ct("1", "Pitty", "Rock"), ct("2", "Pitty", "rock"), ct("3", "Henrique e Juliano", "Sertanejo"),
+        ct("4", CloudTrack.UNKNOWN_ARTIST, ""))
+
+    @Test fun greetingByHour() {
+        assertEquals("Bom dia", CloudHomeLogic.greeting(8)); assertEquals("Boa tarde", CloudHomeLogic.greeting(15)); assertEquals("Boa noite", CloudHomeLogic.greeting(23))
+        assertEquals("Boa noite", CloudHomeLogic.greeting(2))
+    }
+    @Test fun topArtistsAndGenres() {
+        assertEquals(listOf("Pitty", "Henrique e Juliano"), CloudHomeLogic.topArtists(l, 5).map { it.name })
+        val g = CloudHomeLogic.topGenres(l, 5)
+        assertEquals("Rock", g[0].name); assertEquals(2, g[0].count); assertEquals(2, g.size)
+        assertEquals(2, CloudHomeLogic.byGenre(l, "Rock").size); assertEquals(2, CloudHomeLogic.byArtist(l, "Pitty").size)
+    }
+    @Test fun shuffleIsStablePerSeedAndLimited() {
+        assertEquals(CloudHomeLogic.shuffled(l, 5, 3).map { it.id }, CloudHomeLogic.shuffled(l, 5, 3).map { it.id })
+        assertEquals(2, CloudHomeLogic.shuffled(l, 1, 2).size)
+        val h = CloudHomeLogic.hueOf("Pitty"); assertTrue(h >= 0f && h < 360f)
+    }
+}

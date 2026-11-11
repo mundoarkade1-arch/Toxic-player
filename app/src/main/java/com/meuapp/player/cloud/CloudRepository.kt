@@ -20,6 +20,9 @@ sealed class SyncProgress {
     data class Enriching(val done: Int, val total: Int) : SyncProgress()
 }
 
+/** Versão do esquema do índice (3 = gênero, data de adição e pasta). */
+private const val SCHEMA = 3
+
 /** Resultado de uma sincronização. */
 data class SyncResult(val added: Int, val modified: Int, val removed: Int, val full: Boolean, val enrichError: CloudErrorKind?)
 
@@ -32,6 +35,7 @@ class CloudRepository(ctx: Context, private val api: DriveApi = DriveApi()) {
     private val prefs = ctx.applicationContext.getSharedPreferences("toxic_cloud", Context.MODE_PRIVATE)
     private val lock = Any()
     private val map = LinkedHashMap<String, CloudTrack>()
+    private val folders = HashMap<String, DriveFolder>()
 
     // ---------- estado persistido ----------
     var lastSyncMs: Long
@@ -43,20 +47,49 @@ class CloudRepository(ctx: Context, private val api: DriveApi = DriveApi()) {
 
     fun loadIndex(): List<CloudTrack> {
         val l = store.load()
-        synchronized(lock) { map.clear(); l.forEach { map[it.id] = it } }
+        val f = store.loadFolders()
+        synchronized(lock) { map.clear(); l.forEach { map[it.id] = it }; folders.clear(); f.forEach { folders[it.id] = it } }
+        if (l.isEmpty()) prefs.edit().putInt("schema", SCHEMA).apply()
         return l
     }
 
     fun snapshot(): List<CloudTrack> = synchronized(lock) { map.values.toList() }
 
     /** Índice de versão antiga (sem data de adição): pede uma varredura completa para completar os dados. */
-    fun needsMigration(): Boolean = synchronized(lock) { map.values.any { it.addedMs == 0L } }
+    fun needsMigration(): Boolean = prefs.getInt("schema", 0) < SCHEMA && synchronized(lock) { map.isNotEmpty() }
+
+    /** Caminho de pasta de cada pasta-pai usada pelas músicas. */
+    fun pathsFor(list: List<CloudTrack>): Map<String, String> = synchronized(lock) {
+        list.map { it.parentId }.distinct().associateWith { CloudFolders.pathOf(it, folders) }
+    }
+
+    private fun refreshFolders() {
+        val all = ArrayList<DriveFolder>()
+        var page: String? = null
+        do { val p = api.listFolders(page); all += p.first; page = p.second } while (page != null)
+        synchronized(lock) { folders.clear(); all.forEach { folders[it.id] = it } }
+        store.saveFolders(all)
+    }
+
+    /** Atualiza data de adição e pasta das músicas existentes (inclui arquivos movidos de pasta). */
+    private fun applyParents(files: List<DriveFile>) {
+        synchronized(lock) {
+            for (f in files) {
+                val l = map[f.id] ?: continue
+                var n = l
+                if (l.addedMs == 0L) { val a = CloudTrack.addedOf(f); if (a > 0) n = n.copy(addedMs = a) }
+                if (l.parentId != f.parentId) n = n.copy(parentId = f.parentId)
+                if (n !== l) map[f.id] = n
+            }
+        }
+    }
 
     private fun persist() { val s = snapshot(); store.save(s) }
 
     /** Esquece a biblioteca local (desconexão / troca de conta). Não apaga nada no Drive. */
     fun clearAll() {
         synchronized(lock) { map.clear() }
+        synchronized(lock) { folders.clear() }
         store.clear()
         changesToken = null
         lastSyncMs = 0L
@@ -72,6 +105,7 @@ class CloudRepository(ctx: Context, private val api: DriveApi = DriveApi()) {
             val token = changesToken
             var full = forceFull || token == null || synchronized(lock) { map.isEmpty() }
             var plan: SyncPlan? = null
+            var seen: List<DriveFile> = emptyList()
             var newToken: String? = null
             if (!full) {
                 try {
@@ -86,6 +120,7 @@ class CloudRepository(ctx: Context, private val api: DriveApi = DriveApi()) {
                         else { newToken = p.newStartPageToken; page = null }
                     }
                     plan = SyncPlanner.planChanges(synchronized(lock) { HashMap(map) }, acc)
+                    seen = acc.mapNotNull { it.file }
                 } catch (e: CloudException) {
                     // Token de mudanças inválido/expirado: recomeça com varredura completa. Outros erros sobem.
                     if (e.httpCode == 400 || e.httpCode == 404 || e.httpCode == 410) full = true else throw e
@@ -102,18 +137,16 @@ class CloudRepository(ctx: Context, private val api: DriveApi = DriveApi()) {
                     onProgress(SyncProgress.Listing(all.size))
                     page = p.nextPageToken
                 } while (page != null)
-                // Completa a data de adição de faixas de índices antigos (sem reler tags).
-                synchronized(lock) {
-                    for (f in all) {
-                        val l = map[f.id] ?: continue
-                        if (l.addedMs == 0L) { val a = CloudTrack.addedOf(f); if (a > 0) map[f.id] = l.copy(addedMs = a) }
-                    }
-                }
+                seen = all
                 plan = SyncPlanner.planFull(synchronized(lock) { HashMap(map) }, all)
                 newToken = startToken
             }
             val pl = plan!!
             apply(pl)
+            applyParents(seen)
+            // Pastas: falha aqui não impede a sincronização das músicas (o caminho só fica desatualizado).
+            try { if (synchronized(lock) { map.isNotEmpty() }) refreshFolders() } catch (e: CancellationException) { throw e } catch (e: CloudException) { }
+            if (full) prefs.edit().putInt("schema", SCHEMA).apply()
             persist()
             changesToken = newToken ?: changesToken
             lastSyncMs = System.currentTimeMillis()

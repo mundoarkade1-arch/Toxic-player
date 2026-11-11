@@ -11,8 +11,11 @@ data class DriveFile(
     val modifiedTime: String,
     val md5: String?,
     val format: CloudFormat,
-    val createdTime: String = ""
+    val createdTime: String = "",
+    val parentId: String = ""          // pasta onde o arquivo está (primeiro pai)
 )
+
+data class DriveFolder(val id: String, val name: String, val parentId: String)
 
 /** Uma entrada do feed de mudanças (changes.list). [file] é null quando o arquivo foi removido ou não é áudio. */
 data class DriveChange(val fileId: String, val removed: Boolean, val file: DriveFile?)
@@ -34,7 +37,8 @@ object DriveJson {
         // O Drive devolve "size" como texto; ausente em arquivos nativos do Google (que não são áudio).
         val size = o.optString("size").toLongOrNull() ?: return null
         if (size <= 0L) return null
-        return DriveFile(id, name, mime, size, o.optString("modifiedTime"), o.optString("md5Checksum").ifBlank { null }, fmt, o.optString("createdTime"))
+        return DriveFile(id, name, mime, size, o.optString("modifiedTime"), o.optString("md5Checksum").ifBlank { null }, fmt, o.optString("createdTime"),
+            o.optJSONArray("parents")?.optString(0).orEmpty())
     }
 
     fun parseFilesPage(text: String): FilesPage {
@@ -43,6 +47,19 @@ object DriveJson {
         val out = ArrayList<DriveFile>()
         if (arr != null) for (i in 0 until arr.length()) parseFile(arr.optJSONObject(i))?.let { out += it }
         return FilesPage(out, j.optString("nextPageToken").ifBlank { null })
+    }
+
+    /** Pastas do Drive (id, nome, pasta-pai) e o token da próxima página. */
+    fun parseFoldersPage(text: String): Pair<List<DriveFolder>, String?> {
+        val j = JSONObject(text)
+        val arr = j.optJSONArray("files")
+        val out = ArrayList<DriveFolder>()
+        if (arr != null) for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val id = o.optString("id").takeIf { it.isNotBlank() && ID_REGEX.matches(it) } ?: continue
+            out += DriveFolder(id, o.optString("name"), o.optJSONArray("parents")?.optString(0).orEmpty())
+        }
+        return out to j.optString("nextPageToken").ifBlank { null }
     }
 
     fun parseChangesPage(text: String): ChangesPage {

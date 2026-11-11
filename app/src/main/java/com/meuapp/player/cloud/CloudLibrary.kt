@@ -25,8 +25,10 @@ object CloudLibrary {
      */
     fun filter(
         list: List<CloudTrack>, query: String = "", format: CloudFormat? = null,
-        offlineOnly: Boolean = false, offlineIds: Set<String> = emptySet(), group: String? = null
+        offlineOnly: Boolean = false, offlineIds: Set<String> = emptySet(), group: String? = null,
+        paths: Map<String, String> = emptyMap()
     ): List<CloudTrack> {
+        fun pathOf(t: CloudTrack) = paths[t.parentId] ?: if (t.parentId.isBlank()) CloudFolders.OTHER else CloudFolders.ROOT
         val q = normalize(query.trim())
         return list.filter { t ->
             (format == null || t.format == format) &&
@@ -35,11 +37,13 @@ object CloudLibrary {
                     group == null -> true
                     group.startsWith("A:") -> t.artist == group.drop(2)
                     group.startsWith("B:") -> t.album == group.drop(2)
+                    group.startsWith("F:") -> pathOf(t).let { p -> val g = group.drop(2); p == g || p.startsWith("$g/") }
                     group.startsWith("G:") -> normalize(genreOf(t)) == normalize(group.drop(2))
                     else -> true
                 } &&
                 (q.isEmpty() || normalize(t.title).contains(q) || normalize(t.artist).contains(q) ||
-                    normalize(t.album).contains(q) || normalize(t.fileName).contains(q))
+                    normalize(t.album).contains(q) || normalize(t.fileName).contains(q) ||
+                    (paths.isNotEmpty() && normalize(pathOf(t)).contains(q)))
         }
     }
 
@@ -65,6 +69,17 @@ object CloudLibrary {
             val name = names.firstOrNull { it != it.lowercase() && it != it.uppercase() } ?: names.first()
             Group("G:$name", name, l.size)
         }.sortedWith(compareBy({ it.name == NO_GENRE }, { normalize(it.name) }))
+
+    /** Pastas com músicas; cada pasta conta também as músicas das subpastas. Ordenadas por caminho. */
+    fun folders(list: List<CloudTrack>, paths: Map<String, String>): List<Group> {
+        val counts = HashMap<String, Int>()
+        for (t in list) {
+            val p = paths[t.parentId] ?: if (t.parentId.isBlank()) CloudFolders.OTHER else CloudFolders.ROOT
+            var acc = ""
+            for (seg in p.split('/')) { acc = if (acc.isEmpty()) seg else "$acc/$seg"; counts[acc] = (counts[acc] ?: 0) + 1 }
+        }
+        return counts.map { (p, n) -> Group("F:$p", p.replace("/", " / "), n) }.sortedBy { normalize(it.key) }
+    }
 
     fun formatsPresent(list: List<CloudTrack>): List<CloudFormat> =
         list.map { it.format }.distinct().sortedBy { it.ordinal }

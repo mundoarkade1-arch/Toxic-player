@@ -107,6 +107,7 @@ private fun MessageCard(text: String, onClose: () -> Unit) {
 
 @Composable
 private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit) {
+    var home by remember { mutableStateOf(true) }
     var confirmDisconnect by remember { mutableStateOf(false) }
     var confirmDownload by remember { mutableStateOf<List<CloudTrack>?>(null) }
     val open = cloud.openGroup
@@ -114,22 +115,28 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
     val base = remember(cloud.tracks) { cloud.tracks }
     // Listas de gênero e a visão "Recentes" mostram sempre as músicas mais novas do Drive no topo.
     val effSort = if (open?.startsWith("G:") == true || cloud.viewMode == 4) CloudLibrary.SORT_RECENT else cloud.sortMode
-    val filtered = remember(base, cloud.query, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, open, effSort) {
+    val filtered = remember(base, cloud.query, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, open, effSort, cloud.folderPaths) {
         CloudLibrary.sort(
-            CloudLibrary.filter(base, cloud.query, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, open),
+            CloudLibrary.filter(base, cloud.query, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, open, cloud.folderPaths),
             effSort
         )
     }
     val searching = cloud.query.isNotBlank()
-    val showGroups = open == null && !searching && cloud.viewMode in 1..3
-    val groups = remember(base, cloud.viewMode, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds) {
-        val pool = CloudLibrary.filter(base, "", cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, null)
-        when (cloud.viewMode) { 1 -> CloudLibrary.artists(pool); 2 -> CloudLibrary.albums(pool); else -> CloudLibrary.genres(pool) }
+    val showGroups = open == null && !searching && (cloud.viewMode in 1..3 || cloud.viewMode == 5)
+    val groups = remember(base, cloud.viewMode, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, cloud.folderPaths) {
+        val pool = CloudLibrary.filter(base, "", cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, null, cloud.folderPaths)
+        when (cloud.viewMode) { 1 -> CloudLibrary.artists(pool); 2 -> CloudLibrary.albums(pool); 5 -> CloudLibrary.folders(pool, cloud.folderPaths); else -> CloudLibrary.genres(pool) }
     }
     val playerList = remember(filtered, cloud.playerTracks) { filtered.mapNotNull { cloud.trackByNumericId(it.numericId) } }
 
+    if (home && open == null) {
+        CloudHome(vm, cloud, goPlayer, onLibrary = { home = false }) { view, key -> cloud.changeView(view); cloud.enterGroup(key); home = false }
+        return
+    }
+
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (open == null) {
+            item { Row { Chip("← Início", false) { home = true } } }
             item { AccountCard(cloud) }
             item { ActionButtons(cloud) { confirmDisconnect = true } }
             if (cloud.syncing) item { SyncStatus(cloud) }
@@ -147,7 +154,7 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { cloud.enterGroup(null) }) { Icon(Icons.Rounded.ArrowBack, "Voltar", tint = Neon.Green) }
                     Column(Modifier.weight(1f)) {
-                        Text(open.drop(2), fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(open.drop(2).replace("/", " / "), fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text("${filtered.size} músicas", fontSize = 12.sp, color = Neon.Dim)
                     }
                 }
@@ -170,7 +177,7 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
             }
         } else if (showGroups) {
             items(groups, key = { it.key }) { g ->
-                GroupCard(g.name, g.count, when (cloud.viewMode) { 1 -> Icons.Rounded.Person; 2 -> Icons.Rounded.Album; else -> Icons.Rounded.LibraryMusic }) { cloud.enterGroup(g.key) }
+                GroupCard(g.name, g.count, when (cloud.viewMode) { 1 -> Icons.Rounded.Person; 2 -> Icons.Rounded.Album; 5 -> Icons.Rounded.Folder; else -> Icons.Rounded.LibraryMusic }) { cloud.enterGroup(g.key) }
             }
         } else if (filtered.isEmpty()) {
             item { Text("Nada encontrado com estes filtros.", color = Neon.Dim, modifier = Modifier.padding(vertical = 8.dp)) }
@@ -272,6 +279,7 @@ private fun Filters(cloud: CloudManager, all: List<CloudTrack>) {
             Chip("Artistas", cloud.viewMode == 1) { cloud.changeView(1) }
             Chip("Álbuns", cloud.viewMode == 2) { cloud.changeView(2) }
             Chip("Gêneros", cloud.viewMode == 3) { cloud.changeView(3) }
+            Chip("Pastas", cloud.viewMode == 5) { cloud.changeView(5) }
             Chip("Recentes", cloud.viewMode == 4) { cloud.changeView(4) }
             Chip("Offline", cloud.offlineOnly) { cloud.toggleOfflineOnly() }
         }
