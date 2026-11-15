@@ -14,8 +14,8 @@ Sem backend. Drive é a ponte. Contrato JSON real `toxic-playlists` v2 (ARCHITEC
 
 ## Próxima tarefa
 1. Pedir ao usuário o resultado do build no GitHub Actions do app (verde ou vermelho). Se vermelho, corrigir erros primeiro.
-2. Implementar `ListeningHistoryManager` (local, SharedPreferences ou arquivo JSON no aparelho): tocou, terminou, pulou (com posição), repetiu, favoritou. Puro Kotlin, com testes ao lado de SmartPlaylistsTest.
-3. Depois `UserTasteProfile` (pesos por artista, pasta e gênero das tags; pular só reduz peso leve).
+2. FEITO (não compilado): histórico de escuta em `taste/`. Confirmar com o usuário que o Actions ficou verde (testes `ListeningHistoryTest`). Se vermelho, corrigir antes de seguir. Falta só uma tela/botão de privacidade para limpar (`history.clear()`).
+3. Agora: `UserTasteProfile` (pesos por artista, pasta e gênero das tags; pular só reduz peso leve).
 4. Só então `MusicRecommendationEngine` e playlist "Descobertas do dia" via SmartPlaylistManager, sem remover faixa manual e sem duplicata.
 5. Atualizar os 6 documentos. Gerar novo NEXT_AGENT_PROMPT.
 

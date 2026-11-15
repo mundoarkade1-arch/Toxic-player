@@ -7,7 +7,8 @@ Atualizado: 2026-11-15 (agente 1, auditoria). Legenda: [E] existe no código · 
 - [E] Toxic Cloud: login Google (escopo só leitura), Drive v3, leitura de tags por Range, sincronização completa e incremental, streaming com cache, offline, busca.
 - [E] SmartPlaylists: lê o JSON `toxic-playlists` v2 da pasta "Toxic Playlists" do Drive. Regras `artista`, `pasta`, `lista`. Nunca remove faixa. Não recria playlist apagada.
 - [E] Navegação estilo Spotify (Início, Buscar, Biblioteca, No aparelho, Ajustes).
-- [P] Histórico de escuta, perfil de gosto, motor de recomendação: NÃO existem no código (busca por play count, pulada, histórico: nada).
+- [E, não compilado] Histórico de escuta (etapa 2 do agente 2): `taste/ListeningHistory.kt` (lógica pura), `taste/ListeningHistoryStore.kt` (grava no aparelho), ligado em `PlayerViewModel.kt` (troca de faixa, fim da fila, favoritar). Sem tela. Dados só no aparelho.
+- [P] Perfil de gosto (UserTasteProfile) e motor de recomendação: ainda NÃO existem.
 - Estado de build: PROJECT_STATE.md diz que nada foi compilado. Só leitura do Drive (35 playlists, +590 faixas) foi validada no aparelho. [?] build atual no Actions.
 - Problema de organização: pasta antiga repetida `Toxic-player-main/Toxic-player-main/` e arquivos `.kt` soltos na raiz (README manda não ter). Não mexi.
 
