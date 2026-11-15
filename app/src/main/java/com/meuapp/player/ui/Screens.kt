@@ -188,6 +188,7 @@ internal fun neonSwitch() = SwitchDefaults.colors(
 )
 
 /** Slider do app: trilho verde e bolinha com degradê da marca. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun NeonSlider(
     value: Float, onChange: (Float) -> Unit, modifier: Modifier = Modifier,
@@ -374,19 +375,20 @@ fun PlayerScreen(vm: PlayerViewModel) {
             Image(bmp.asImageBitmap(), null, Modifier.fillMaxSize().blur(80.dp).alpha(0.32f), contentScale = ContentScale.Crop)
         }
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val landscape = maxWidth > maxHeight
+            val availH = maxHeight
+            val landscape = maxWidth > availH
             if (landscape) {
                 Row(
                     Modifier.fillMaxSize().padding(20.dp),
                     horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically
                 ) {
-                    PlayerCover(bmp, tint, vm.isPlaying, (maxHeight - 40.dp).coerceAtLeast(120.dp))
+                    PlayerCover(bmp, tint, vm.isPlaying, (availH - 40.dp).coerceAtLeast(120.dp))
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                         PlayerPanel(vm, track, { showQueue = true }, { showTimer = true })
                     }
                 }
             } else {
-                val side = minOf(maxWidth - 56.dp, maxHeight * 0.34f).coerceAtLeast(150.dp)
+                val side = minOf(maxWidth - 56.dp, availH * 0.34f).coerceAtLeast(150.dp)
                 Column(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)
