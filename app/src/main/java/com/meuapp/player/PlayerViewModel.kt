@@ -84,7 +84,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val cloud = CloudManager(app, viewModelScope)
 
     // Playlists inteligentes (JSON do site no Drive). Só lógica: as telas chamam importSmartPlaylistsJson / syncSmartPlaylistsNow.
-    val smart = SmartPlaylistManager(
+    val smart: SmartPlaylistManager = SmartPlaylistManager(
         app, DriveApi(), viewModelScope,
         library = { cloud.tracks }, paths = { cloud.folderPaths }, playlists = { playlists.toMap() },
         commit = { changed -> changed.forEach { (k, v) -> playlists[k] = v }; savePlaylists() },

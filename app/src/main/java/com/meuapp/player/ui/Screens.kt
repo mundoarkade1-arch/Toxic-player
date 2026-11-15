@@ -420,7 +420,8 @@ fun PlayerScreen(vm: PlayerViewModel, onClose: (() -> Unit)? = null) {
                 }
             }
         }
-        if (onClose != null && maxWidth > maxHeight) {
+        val screen = androidx.compose.ui.platform.LocalConfiguration.current
+        if (onClose != null && screen.screenWidthDp > screen.screenHeightDp) {
             IconButton(onClick = onClose, Modifier.align(Alignment.TopStart).padding(4.dp)) {
                 Icon(Icons.Rounded.KeyboardArrowDown, "Minimizar o player", tint = Neon.Green, modifier = Modifier.size(30.dp))
             }
