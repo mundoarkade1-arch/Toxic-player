@@ -26,8 +26,11 @@ class SmartPlaylistManager(
     private val paths: () -> Map<String, String>,
     private val playlists: () -> Map<String, List<Long>>,
     private val commit: (Map<String, List<Long>>) -> Unit,
-    private val notify: (String) -> Unit
+    private val notify: (SmartInfo) -> Unit
 ) {
+    /** Entrega o aviso à tela junto com a lista das faixas não encontradas. */
+    private fun say(text: String) = notify(SmartInfo(text, lastReport))
+
     private val prefs = ctx.applicationContext.getSharedPreferences("toxic_smart", Context.MODE_PRIVATE)
     @Volatile private var fetching = false
 
@@ -80,7 +83,7 @@ class SmartPlaylistManager(
         try {
             val f = storedFile() ?: return
             val out = applyFile(f, ignoreDismissed = false) ?: return
-            if (announce || out.updated > 0) notify(SmartPlaylists.describe(out))
+            if (announce || out.updated > 0) say(SmartPlaylists.describe(out))
         } catch (e: CancellationException) { throw e
         } catch (e: Exception) { /* nunca derruba o app */ }
     }
@@ -143,9 +146,9 @@ class SmartPlaylistManager(
                     if (newFile != null) saveFile(newFile, driveModified)
                     val file = newFile ?: storedFile()
                     val out = if (file != null) applyFile(file, ignoreDismissed = false) else null
-                    if (msg != null && (manual || loudNow)) { lastReport = ""; notify(msg) }
-                    else if (out != null && (manual || out.updated > 0)) notify(SmartPlaylists.describe(out))
-                    else if (out == null && manual && file != null) { lastReport = ""; notify("A biblioteca da nuvem ainda está vazia. Sincronize a Cloud e tente de novo.") }
+                    if (msg != null && (manual || loudNow)) { lastReport = ""; say(msg) }
+                    else if (out != null && (manual || out.updated > 0)) say(SmartPlaylists.describe(out))
+                    else if (out == null && manual && file != null) { lastReport = ""; say("A biblioteca da nuvem ainda está vazia. Sincronize a Cloud e tente de novo.") }
                 } catch (e: CancellationException) { throw e
                 } catch (e: Exception) { /* nunca derruba o app */
                 } finally { fetching = false }

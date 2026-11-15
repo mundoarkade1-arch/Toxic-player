@@ -88,7 +88,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         app, DriveApi(), viewModelScope,
         library = { cloud.tracks }, paths = { cloud.folderPaths }, playlists = { playlists.toMap() },
         commit = { changed -> changed.forEach { (k, v) -> playlists[k] = v }; savePlaylists() },
-        notify = { smartInfo = SmartInfo(it, smart.lastReport) }
+        notify = { smartInfo = it }
     )
     private var localLoaded = false
     @Volatile private var pendingRetry = false      // erro de rede/sessão: retomar quando possível
