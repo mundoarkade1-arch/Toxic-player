@@ -467,11 +467,11 @@ private fun PlayerPanel(vm: PlayerViewModel, track: Track?, openQueue: () -> Uni
                 Text(fmt(vm.duration), fontSize = 12.sp, color = Neon.Dim)
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = vm::toggleShuffle) { Icon(Icons.Rounded.Shuffle, "Aleatório", tint = if (vm.shuffle) Neon.Green else Neon.Dim) }
             IconButton(onClick = vm::prev) { Icon(Icons.Rounded.SkipPrevious, "Anterior", modifier = Modifier.size(38.dp)) }
             Box(
-                Modifier.size(76.dp).drawBehind { drawCircle(Neon.Green.copy(alpha = 0.22f), size.minDimension * 0.74f) }
+                Modifier.size(76.dp).drawBehind { drawCircle(Neon.Green.copy(alpha = 0.16f), size.minDimension * 0.6f) }
                     .clip(CircleShape).background(Neon.Brand)
                     .clickable { haptic.performHapticFeedback(HapticFeedbackType.LongPress); vm.toggle() },
                 contentAlignment = Alignment.Center
@@ -484,7 +484,7 @@ private fun PlayerPanel(vm: PlayerViewModel, track: Track?, openQueue: () -> Uni
             IconButton(onClick = vm::next) { Icon(Icons.Rounded.SkipNext, "Próxima", modifier = Modifier.size(38.dp)) }
             IconButton(onClick = vm::toggleRepeat) { Icon(Icons.Rounded.Repeat, "Repetir", tint = if (vm.repeat) Neon.Green else Neon.Dim) }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ActionPill(
                 Icons.Rounded.AutoAwesome,
                 if (AudioFx.enabled) "Efeitos: ${AudioFx.activeName}" else "Efeitos desligados",
