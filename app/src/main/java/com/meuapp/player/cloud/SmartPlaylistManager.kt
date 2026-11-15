@@ -7,6 +7,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** Aviso para a tela: [text] é a frase principal; [report] lista as faixas que não casaram (pode ser vazio). */
+data class SmartInfo(val text: String, val report: String = "")
+
 /**
  * Liga o arquivo "playlists-inteligentes.json" do Drive às playlists do app. SEM TELA: só lógica.
  * Todas as funções públicas devem ser chamadas na thread principal (as playlists do app são estado do Compose).
@@ -85,7 +88,7 @@ class SmartPlaylistManager(
     /** Importa um arquivo .json escolhido pelo usuário. Devolve uma frase simples. */
     fun importText(text: String?): String = try {
         when (val p = SmartPlaylistJson.parse(text)) {
-            is SmartParse.Invalid -> "Não consegui ler este arquivo de playlists. ${p.reason}"
+            is SmartParse.Invalid -> { lastReport = ""; "Não consegui ler este arquivo de playlists. ${p.reason}" }
             is SmartParse.Ok -> {
                 saveFile(p.file, driveModified = "")
                 val out = applyFile(p.file, ignoreDismissed = true)
@@ -140,8 +143,9 @@ class SmartPlaylistManager(
                     if (newFile != null) saveFile(newFile, driveModified)
                     val file = newFile ?: storedFile()
                     val out = if (file != null) applyFile(file, ignoreDismissed = false) else null
-                    if (msg != null && (manual || loudNow)) notify(msg)
+                    if (msg != null && (manual || loudNow)) { lastReport = ""; notify(msg) }
                     else if (out != null && (manual || out.updated > 0)) notify(SmartPlaylists.describe(out))
+                    else if (out == null && manual && file != null) { lastReport = ""; notify("A biblioteca da nuvem ainda está vazia. Sincronize a Cloud e tente de novo.") }
                 } catch (e: CancellationException) { throw e
                 } catch (e: Exception) { /* nunca derruba o app */
                 } finally { fetching = false }

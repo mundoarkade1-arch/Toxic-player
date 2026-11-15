@@ -637,6 +637,27 @@ private fun groupTitle(vm: PlayerViewModel, key: String): String = when {
     else -> vm.groups(0).plus(vm.groups(1)).plus(vm.groups(2)).firstOrNull { it.path == key }?.name ?: "Grupo"
 }
 
+/** Resultado das playlists do Drive, em destaque (borda e título verdes), com as faixas não encontradas. */
+@Composable
+internal fun SmartInfoCard(info: com.meuapp.player.cloud.SmartInfo, onClose: () -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        Modifier.fillMaxWidth().clip(shape).background(Neon.Green.copy(alpha = 0.10f)).border(1.5.dp, Neon.Green.copy(alpha = 0.75f), shape)
+            .padding(start = 16.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("PLAYLISTS DO DRIVE", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp, fontWeight = FontWeight.SemiBold)
+            Text(info.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            if (info.report.isNotBlank()) {
+                Text("Não encontradas:", fontSize = 12.sp, color = Neon.Dim, modifier = Modifier.padding(top = 4.dp))
+                Text(info.report, fontSize = 12.sp, color = Neon.Dim)
+            }
+        }
+        IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Fechar aviso", tint = Neon.Dim) }
+    }
+}
+
 @Composable
 private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
     val ctx = LocalContext.current
@@ -650,6 +671,12 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
             playlistMessage = if (text == null) "Arquivo ilegível ou maior que 1 MB." else if (count > 0) "Playlist importada: $count faixas." else "Nenhuma faixa da playlist foi encontrada na biblioteca do celular."
         }
     }
+    val jsonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val text = withContext(Dispatchers.IO) { com.meuapp.player.SafeRead.readText(ctx, uri, 8 * 1024 * 1024) }
+            vm.importSmartPlaylistsJson(text)
+        }
+    }
     var newListDialog by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var pickFor by remember { mutableStateOf<Track?>(null) }
@@ -661,6 +688,7 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
 
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
         item { PageHeader("BIBLIOTECA", plural(vm.tracks.size)) }
+        vm.smartInfo?.let { info -> item { SmartInfoCard(info) { vm.dismissSmartInfo() } } }
         item { SearchField(vm.query, vm::changeQuery, "Buscar música, artista, álbum ou pasta") }
         if (searching) {
             item { Text("Resultados · ${plural(results.size)}", fontSize = 13.sp, color = Neon.Dim, modifier = Modifier.padding(top = 4.dp)) }
@@ -679,6 +707,8 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
                         }
                     }
                 }
+                item { GhostButton("Importar playlists (.json)", Modifier.fillMaxWidth()) { jsonPicker.launch(arrayOf("application/json", "text/plain", "*/*")) } }
+                item { GhostButton("Sincronizar playlists do Drive", Modifier.fillMaxWidth()) { vm.syncSmartPlaylistsNow() } }
                 if (playlistMessage.isNotBlank()) item { Text(playlistMessage, fontSize = 12.sp, color = Neon.Dim) }
             }
             if (vm.tracks.isEmpty() && vm.libMode != 3) {

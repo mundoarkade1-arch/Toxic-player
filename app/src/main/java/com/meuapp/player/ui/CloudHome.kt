@@ -110,6 +110,7 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
             }
         }
         cloud.message?.let { m -> item { Text(m, fontSize = 12.sp, color = Neon.Dim) } }
+        vm.smartInfo?.let { info -> item { SmartInfoCard(info) { vm.dismissSmartInfo() } } }
         if (all.isEmpty()) {
             item {
                 EmptyState(

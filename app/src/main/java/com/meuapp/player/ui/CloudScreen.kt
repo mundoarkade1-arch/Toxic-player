@@ -143,9 +143,10 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
         if (open == null) {
             item { PageHeader("TOXIC CLOUD", "Biblioteca") { GhostButton("← Início", onClick = { home = true }) } }
             item { AccountCard(cloud) }
-            item { ActionButtons(cloud) { confirmDisconnect = true } }
+            item { ActionButtons(vm, cloud) { confirmDisconnect = true } }
             if (cloud.syncing) item { SyncStatus(cloud) }
             cloud.message?.let { m -> item { MessageCard(m) { cloud.dismissMessage() } } }
+            vm.smartInfo?.let { info -> item { SmartInfoCard(info) { vm.dismissSmartInfo() } } }
             item {
                 SearchField(cloud.query, cloud::changeQuery, "Buscar na nuvem")
             }
@@ -242,12 +243,13 @@ private fun AccountCard(cloud: CloudManager) {
 }
 
 @Composable
-private fun ActionButtons(cloud: CloudManager, onDisconnect: () -> Unit) {
+private fun ActionButtons(vm: PlayerViewModel, cloud: CloudManager, onDisconnect: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton("Sincronizar", Modifier.weight(1f)) { cloud.syncNow() }
             GhostButton("Atualizar biblioteca", Modifier.weight(1f)) { cloud.refreshLibrary() }
         }
+        GhostButton("Sincronizar playlists do Drive", Modifier.fillMaxWidth()) { vm.syncSmartPlaylistsNow() }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton("Trocar conta", Modifier.weight(1f)) { cloud.switchAccount() }
             GhostButton("Desconectar", Modifier.weight(1f), onDisconnect)

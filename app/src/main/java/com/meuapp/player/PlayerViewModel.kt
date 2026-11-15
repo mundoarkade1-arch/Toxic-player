@@ -33,6 +33,7 @@ import com.meuapp.player.cloud.CloudErrorKind
 import com.meuapp.player.cloud.CloudManager
 import com.meuapp.player.cloud.CloudPlayback
 import com.meuapp.player.cloud.DriveApi
+import com.meuapp.player.cloud.SmartInfo
 import com.meuapp.player.cloud.SmartPlaylistManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -57,6 +58,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     var queue by mutableStateOf<List<Track>>(emptyList()); private set
     var queueIndex by mutableIntStateOf(0); private set
     val playlists = mutableStateMapOf<String, List<Long>>()
+    /** Último resultado das playlists do Drive, mostrado em destaque nas telas até o usuário fechar. */
+    var smartInfo by mutableStateOf<SmartInfo?>(null); private set
+    fun dismissSmartInfo() { smartInfo = null }
 
     // Biblioteca
     var openFolder by mutableStateOf<String?>(null); private set
@@ -84,7 +88,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         app, DriveApi(), viewModelScope,
         library = { cloud.tracks }, paths = { cloud.folderPaths }, playlists = { playlists.toMap() },
         commit = { changed -> changed.forEach { (k, v) -> playlists[k] = v }; savePlaylists() },
-        notify = { cloud.appendMessage(it) }
+        notify = { smartInfo = SmartInfo(it, smart.lastReport) }
     )
     private var localLoaded = false
     @Volatile private var pendingRetry = false      // erro de rede/sessão: retomar quando possível
@@ -466,8 +470,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Playlists do site (JSON): para as telas usarem depois. Devolvem uma frase simples para mostrar. */
-    fun importSmartPlaylistsJson(text: String?): String = smart.importText(text)
-    fun syncSmartPlaylistsNow() = smart.syncFromDrive(manual = true)
+    fun importSmartPlaylistsJson(text: String?): String {
+        val msg = smart.importText(text)
+        smartInfo = SmartInfo(msg, smart.lastReport)
+        return msg
+    }
+    fun syncSmartPlaylistsNow() {
+        if (!cloud.connected) { smartInfo = SmartInfo("Conecte sua conta na aba Cloud primeiro."); return }
+        smart.syncFromDrive(manual = true)
+    }
 
     fun deletePlaylist(name: String) {
         if (name == FAVORITES) return

@@ -2,7 +2,8 @@
 
 ## Não lançado
 ### Adicionado (playlists do site)
-- Leitura do arquivo `playlists-inteligentes.json` (pasta "Toxic Playlists" do Drive): cria/atualiza playlists sozinhas depois de cada sincronização, sem remover faixas escolhidas à mão. Só lógica, sem telas ainda. Testes em `SmartPlaylistsTest`.
+- Leitura do arquivo `playlists-inteligentes.json` (pasta "Toxic Playlists" do Drive): cria/atualiza playlists sozinhas depois de cada sincronização, sem remover faixas escolhidas à mão. Testes em `SmartPlaylistsTest`.
+- Telas: botões "Importar playlists (.json)" e "Sincronizar playlists do Drive" e cartão de resultado em destaque.
 ### Redesign visual (UX/UI)
 - Novo visual "vidro" (glass): fundo aurora que acompanha a cor da capa, cartões de vidro com borda de brilho, botões com degradê verde → limão, diálogos e menus no mesmo estilo.
 - Novo ícone do app (trevo de radiação com botão de play, com versão monocromática para ícones temáticos do Android 13+), tela de abertura e widget redesenhados.
