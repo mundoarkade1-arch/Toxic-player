@@ -12,7 +12,10 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.CacheWriter
 import java.io.IOException
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Streaming do Drive no ExoPlayer.
@@ -45,18 +48,58 @@ object CloudPlayback {
      * Fábrica de fontes de dados do player. Arquivos locais (content:// e file://) continuam pelo caminho padrão,
      * sem passar pelo cache; só o esquema toxiccloud:// usa resolver + cache.
      */
-    fun dataSourceFactory(ctx: Context): DataSource.Factory {
+    fun dataSourceFactory(ctx: Context): DataSource.Factory = DefaultDataSource.Factory(ctx, cachedFactory(ctx))
+
+    /** Fonte da nuvem com cache em disco (usada pelo player e pelo pré-carregamento). */
+    private fun cachedFactory(ctx: Context): CacheDataSource.Factory {
         CloudAuth.init(ctx); CloudStorage.init(ctx)
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent("ToxicPlayer")
             .setConnectTimeoutMs(CloudConfig.CONNECT_TIMEOUT_MS)
             .setReadTimeoutMs(CloudConfig.READ_TIMEOUT_MS)
         val resolving = ResolvingDataSource.Factory(http, Resolver)
-        val cached = CacheDataSource.Factory()
+        return CacheDataSource.Factory()
             .setCache(CloudStorage.audioCache())
             .setUpstreamDataSourceFactory(resolving)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        return DefaultDataSource.Factory(ctx, cached)
+    }
+
+    // ---------- pré-carregamento das próximas músicas ----------
+    /** Quanto do começo de cada música seguinte é guardado no cache em disco (cerca de 1 min de áudio MP3). */
+    private const val PREFETCH_BYTES = 1024L * 1024L
+    private val prefetchGen = AtomicInteger(0)
+    @Volatile private var activeWriter: CacheWriter? = null
+    private val prefetchExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "toxic-prefetch").apply { priority = Thread.MIN_PRIORITY; isDaemon = true }
+    }
+
+    /**
+     * Guarda no cache o começo das próximas músicas ([fileId] e tamanho do arquivo), uma de cada vez, em segundo plano.
+     * Assim, ao pular ou terminar a música, a próxima já começa na hora. Uma chamada nova cancela a anterior.
+     * Nunca lança erro: sem internet ou sem login, simplesmente não faz nada.
+     */
+    fun prefetch(ctx: Context, items: List<Pair<String, Long>>) {
+        val gen = prefetchGen.incrementAndGet()
+        try { activeWriter?.cancel() } catch (e: Exception) { }
+        if (items.isEmpty()) return
+        val app = ctx.applicationContext
+        prefetchExecutor.execute {
+            for ((id, size) in items) {
+                if (gen != prefetchGen.get()) return@execute
+                try {
+                    if (id.isBlank() || size <= 0) continue
+                    val len = minOf(PREFETCH_BYTES, size)
+                    val key = CloudStorage.cacheKey(id)
+                    if (CloudStorage.audioCache().isCached(key, 0, len)) continue
+                    val spec = DataSpec.Builder().setUri(Uri.parse(key)).setPosition(0).setLength(len).build()
+                    val writer = CacheWriter(cachedFactory(app).createDataSource(), spec, null, null)
+                    activeWriter = writer
+                    writer.cache()
+                } catch (e: Exception) {
+                    // sem rede, token vencido, arquivo sumiu ou cancelado: segue sem pré-carregar
+                }
+            }
+        }
     }
 
     /** Traduz um erro do player em uma categoria compreensível, sem expor URL, token ou resposta do servidor. */

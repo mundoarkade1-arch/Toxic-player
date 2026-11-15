@@ -1,6 +1,8 @@
 # Changelog
 
 ## Não lançado
+### Adicionado (velocidade)
+- Pré-carregamento: com a música atual já bem à frente no buffer, o app guarda no cache o começo (1 MB) das 2 próximas músicas da nuvem, em segundo plano e com prioridade mínima; funciona em 3G sem atrapalhar a música tocando. Cache de capas proporcional à memória do aparelho.
 ### Alterado (navegação)
 - App com abas Início, Buscar, Biblioteca, No aparelho e Ajustes; player recolhido (mini player) que abre ao tocar; sincronização, equalizador e atualização foram para Ajustes; playlists com capa genérica colorida.
 ### Adicionado (playlists do site)

@@ -11,7 +11,7 @@ import java.io.File
 
 /** Carrega a capa de uma música: miniatura do sistema, imagem embutida no arquivo ou cover.jpg da pasta. */
 object CoverLoader {
-    private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
+    private val cache = object : LruCache<String, Bitmap>(((Runtime.getRuntime().maxMemory() / 8L).toInt()).coerceIn(16 * 1024 * 1024, 64 * 1024 * 1024)) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
     private val missing = HashSet<String>()

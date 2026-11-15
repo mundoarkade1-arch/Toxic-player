@@ -34,4 +34,4 @@ Arquivos: `ui/Screens.kt` (App/NavBar), `ui/CloudScreen.kt` (Início/Buscar/Driv
 - Playlists do Drive: `Regex` agora é compilada uma vez (antes recompilava milhares de vezes a cada abertura, na thread principal); palavras de artista e pastas calculadas uma vez; a conta roda em segundo plano (Dispatchers.Default) e é PULADA se biblioteca e arquivo não mudaram (assinatura guardada em `toxic_smart/sig`). `CloudLibrary.normalize` também usa Regex pré-compilada (ajuda busca e filtros).
 - Player: `DefaultLoadControl` (começa a tocar com 1 s de áudio, guarda até 2 min à frente).
 - Capas de playlist: mosaico de 4 capas / capa da primeira música; sem capa, degradê com símbolo.
-- Ideias futuras de velocidade (não feitas): pré-carregar o início das próximas músicas da fila no cache; cache de miniaturas em disco; Baseline Profile.
+- Pré-carregamento FEITO: `CloudPlayback.prefetch` guarda 1 MB do começo das 2 próximas músicas (thread de prioridade mínima, espera 20 s de buffer à frente). Ideias futuras: cache de miniaturas em disco; Baseline Profile.

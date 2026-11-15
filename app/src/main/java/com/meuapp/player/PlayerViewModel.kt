@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
@@ -29,6 +30,7 @@ import androidx.media3.session.SessionToken
 import com.meuapp.player.audio.AudioFx
 import com.meuapp.player.audio.PlaybackService
 import com.meuapp.player.cloud.CloudAuth
+import com.meuapp.player.cloud.CloudConfig
 import com.meuapp.player.cloud.CloudErrorKind
 import com.meuapp.player.cloud.CloudManager
 import com.meuapp.player.cloud.CloudPlayback
@@ -36,6 +38,7 @@ import com.meuapp.player.cloud.DriveApi
 import com.meuapp.player.cloud.SmartInfo
 import com.meuapp.player.cloud.SmartPlaylistManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -185,7 +188,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     artist = m.artist?.toString() ?: "Artista desconhecido"
                     refreshCurrent()
                 }
-                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { savePos(); refreshCurrent(); refreshQueue() }
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { savePos(); refreshCurrent(); refreshQueue(); schedulePrefetch(c) }
                 override fun onTimelineChanged(timeline: Timeline, reason: Int) { refreshQueue() }
                 override fun onPlayerError(error: PlaybackException) {
                     val curId = c.currentMediaItem?.mediaId?.toLongOrNull()
@@ -266,6 +269,39 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val m = c.mediaMetadata
         if (m.title != null) { title = m.title.toString(); artist = m.artist?.toString() ?: "Artista desconhecido" }
         refreshCurrent()
+    }
+
+    private var prefetchJob: Job? = null
+
+    /**
+     * Adianta as próximas músicas da nuvem: guarda o começo delas no cache. Espera a música atual ter áudio de sobra
+     * na frente (assim não disputa a internet em conexão lenta) e nunca baixa o que já está offline.
+     */
+    private fun schedulePrefetch(c: Player) {
+        prefetchJob?.cancel()
+        prefetchJob = viewModelScope.launch {
+            try {
+                var waited = 0
+                while (waited < 30) {
+                    if (c.mediaItemCount == 0) return@launch
+                    if (!c.isPlaying || c.bufferedPercentage >= 100 || c.bufferedPosition - c.currentPosition > 20_000L) break
+                    delay(2_000); waited++
+                }
+                val idx = ArrayList<Int>()
+                if (c.nextMediaItemIndex != C.INDEX_UNSET) idx += c.nextMediaItemIndex
+                if (!c.shuffleModeEnabled && c.currentMediaItemIndex + 2 < c.mediaItemCount) idx += c.currentMediaItemIndex + 2
+                val items = ArrayList<Pair<String, Long>>()
+                for (i in idx) {
+                    val uri = c.getMediaItemAt(i).localConfiguration?.uri ?: continue
+                    if (uri.scheme != CloudConfig.SCHEME) continue      // só músicas da nuvem em streaming
+                    val cid = uri.lastPathSegment ?: continue
+                    if (cid in cloud.offlineIds) continue
+                    val size = cloud.cloudTrack(cid)?.size ?: continue
+                    items += cid to size
+                }
+                CloudPlayback.prefetch(getApplication<Application>(), items)
+            } catch (e: Exception) { /* pré-carregar é só um bônus: nunca atrapalha */ }
+        }
     }
 
     /**
