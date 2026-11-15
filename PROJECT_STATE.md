@@ -24,3 +24,8 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 **Já validado no aparelho (antes das telas):** leitura do Drive, 35 playlists, +590 faixas, músicas tocando.
 **(Texto antigo, já feito acima) Falta (telas, só com autorização):** botão "Importar playlists (.json)" ao lado do M3U (`ui/Screens.kt`, ~linha 422), botão "Sincronizar playlists do Drive" e o retorno destacado ("3 playlists atualizadas, +27 faixas, 4 não encontradas" + lista das não encontradas, que já está em `vm.smart.lastReport`). Hoje o resultado aparece na mensagem da aba Cloud.
 **Não validado:** build no Actions, leitura real do Drive, aparelho.
+
+## Nova navegação estilo Spotify (etapa 1) — código escrito, ainda não compilado pelo Actions
+Abas: **Início** (playlists, mixes, descubra), **Buscar** (procura no Drive; menu da música guarda em playlist), **Biblioteca** (Playlists com capas genéricas + Músicas do Drive), **No aparelho** (músicas do celular; permissão só aqui), **Ajustes** (Conta e sincronização, Áudio e equalizador, Atualização do app). O player fica recolhido (mini player) e só abre ao tocar nele; a fila é restaurada na última música.
+Arquivos: `ui/Screens.kt` (App/NavBar), `ui/CloudScreen.kt` (Início/Buscar/DriveSongs/CloudSettings), `ui/PlaylistsScreen.kt` (LibraryHub, capas), `ui/SettingsScreen.kt`, `ui/CloudHome.kt` (seção "Suas playlists").
+**Falta (etapa 2):** modo offline: sem internet o app pergunta se quer entrar no modo offline e só então mostra "No aparelho"; opção em Ajustes para deixar sempre no modo offline.

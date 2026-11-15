@@ -1,6 +1,8 @@
 # Changelog
 
 ## Não lançado
+### Alterado (navegação)
+- App com abas Início, Buscar, Biblioteca, No aparelho e Ajustes; player recolhido (mini player) que abre ao tocar; sincronização, equalizador e atualização foram para Ajustes; playlists com capa genérica colorida.
 ### Adicionado (playlists do site)
 - Leitura do arquivo `playlists-inteligentes.json` (pasta "Toxic Playlists" do Drive): cria/atualiza playlists sozinhas depois de cada sincronização, sem remover faixas escolhidas à mão. Testes em `SmartPlaylistsTest`.
 - Telas: botões "Importar playlists (.json)" e "Sincronizar playlists do Drive" e cartão de resultado em destaque.

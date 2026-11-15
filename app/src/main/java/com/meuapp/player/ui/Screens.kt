@@ -64,9 +64,12 @@ import kotlin.math.max
 import kotlin.math.pow
 
 // ───────────── Estrutura principal + navegação ─────────────
+/** Abas: 0 Início, 1 Buscar, 2 Biblioteca (playlists e músicas do Drive), 3 No aparelho, 4 Ajustes. O Player abre por cima, ao tocar no mini player. */
 @Composable
 fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
-    var tab by remember { mutableIntStateOf(1) }
+    var tab by remember { mutableIntStateOf(0) }
+    var showPlayer by remember { mutableStateOf(false) }
+    CloudAuthEffect(vm.cloud)
     val bg by rememberCover(vm.currentTrack, 48)
     val target = bg?.let { lerp(Neon.Glow, Color(CoverLoader.averageColor(it)), 0.5f) } ?: Neon.Glow
     val glowColor by animateColorAsState(target, tween(700), label = "glow")
@@ -76,31 +79,38 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
             title = { Text("Bem-vindo ao Toxic Player", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("• Biblioteca: músicas salvas no celular. A permissão só será solicitada ao abrir essa seção.")
-                    Text("• Cloud: conecte sua conta Google e toque as músicas do seu Google Drive pela internet.")
-                    Text("• Player e Equalizador: controles e ajustes de áudio para suas músicas.")
+                    Text("• Início: suas playlists, mixes e a última música. Toque no player de baixo para abri-lo.")
+                    Text("• Buscar e Biblioteca: tudo o que está no seu Google Drive.")
+                    Text("• No aparelho: músicas salvas no celular (a permissão só é pedida ao abrir essa aba).")
+                    Text("• Ajustes: conta do Drive, sincronização, equalizador e atualização do app.")
                 }
             },
             confirmButton = { TextButton(onClick = { vm.dismissTips() }) { Text("Entendi", color = Neon.Green, fontWeight = FontWeight.Bold) } }
         )
     }
+    BackHandler(enabled = showPlayer) { showPlayer = false }
+    BackHandler(enabled = !showPlayer && tab != 0) { tab = 0 }
     Scaffold(
         containerColor = Neon.Bg,
         bottomBar = {
-            Column {
-                AnimatedVisibility(visible = tab != 1 && vm.currentTrack != null) { MiniPlayer(vm) { tab = 1 } }
+            if (!showPlayer) Column {
+                AnimatedVisibility(visible = vm.currentTrack != null) { MiniPlayer(vm) { showPlayer = true } }
                 NavBar(tab, vm.update != null) { tab = it }
             }
         }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize().clipToBounds().aurora(glowColor)) {
-            Crossfade(targetState = tab, animationSpec = tween(220), label = "tab") { t ->
-                when (t) {
-                    0 -> LibraryScreen(vm, granted, askPerm) { tab = 1 }
-                    1 -> PlayerScreen(vm)
-                    2 -> MesaScreen(vm)
-                    4 -> CloudScreen(vm) { tab = 1 }
-                    else -> UpdateScreen(vm)
+            if (showPlayer) {
+                PlayerScreen(vm) { showPlayer = false }
+            } else {
+                Crossfade(targetState = tab, animationSpec = tween(220), label = "tab") { t ->
+                    when (t) {
+                        0 -> CloudScreen(vm, {}, CloudMode.HOME) { tab = it }
+                        1 -> CloudScreen(vm, {}, CloudMode.SEARCH)
+                        2 -> LibraryHub(vm) {}
+                        3 -> LibraryScreen(vm, granted, askPerm) {}
+                        else -> SettingsScreen(vm)
+                    }
                 }
             }
         }
@@ -111,11 +121,11 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
 private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
     val haptic = LocalHapticFeedback.current
     val items = listOf(
-        Triple("Biblioteca", Icons.Rounded.LibraryMusic, 0),
-        Triple("Cloud", Icons.Rounded.Cloud, 4),
-        Triple("Player", Icons.Rounded.GraphicEq, 1),
-        Triple("Equalizador", Icons.Rounded.Tune, 2),
-        Triple("Atualizar", Icons.Rounded.SystemUpdate, 3)
+        Triple("Início", Icons.Rounded.Home, 0),
+        Triple("Buscar", Icons.Rounded.Search, 1),
+        Triple("Biblioteca", Icons.Rounded.LibraryMusic, 2),
+        Triple("No aparelho", Icons.Rounded.PhoneAndroid, 3),
+        Triple("Ajustes", Icons.Rounded.Settings, 4)
     )
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp).glass(30.dp, strong = true).padding(5.dp),
@@ -136,7 +146,7 @@ private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
             ) {
                 Box {
                     Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp))
-                    if (i == 3 && hasUpdate) Box(Modifier.size(8.dp).clip(CircleShape).background(Neon.Lime).align(Alignment.TopEnd))
+                    if (i == 4 && hasUpdate) Box(Modifier.size(8.dp).clip(CircleShape).background(Neon.Lime).align(Alignment.TopEnd))
                 }
                 Text(label, fontSize = 10.sp, color = tint, maxLines = 1, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
             }
@@ -144,7 +154,7 @@ private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
     }
 }
 
-/** Mini player: aparece em todas as telas (menos no Player) enquanto houver uma música carregada. */
+/** Mini player: aparece em todas as abas (menos com o Player aberto) enquanto houver uma música carregada. Tocar nele abre o Player. */
 @Composable
 private fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
     val cover by rememberCover(vm.currentTrack, 128)
@@ -360,7 +370,7 @@ internal fun MiniAction(text: String, color: Color = Neon.Dim, onClick: () -> Un
 
 // ───────────── Player ─────────────
 @Composable
-fun PlayerScreen(vm: PlayerViewModel) {
+fun PlayerScreen(vm: PlayerViewModel, onClose: (() -> Unit)? = null) {
     var showQueue by remember { mutableStateOf(false) }
     var showTimer by remember { mutableStateOf(false) }
     val track = vm.currentTrack
@@ -394,7 +404,10 @@ fun PlayerScreen(vm: PlayerViewModel) {
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("TOXIC PLAYER", color = Neon.Green, fontSize = 12.sp, letterSpacing = 4.sp, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (onClose != null) IconButton(onClick = onClose) { Icon(Icons.Rounded.KeyboardArrowDown, "Minimizar o player", tint = Neon.Green, modifier = Modifier.size(30.dp)) }
+                            Text("TOXIC PLAYER", color = Neon.Green, fontSize = 12.sp, letterSpacing = 4.sp, fontWeight = FontWeight.Bold)
+                        }
                         if (vm.queue.isNotEmpty()) {
                             Text(
                                 "${vm.queueIndex + 1} / ${vm.queue.size}", fontSize = 12.sp, color = Neon.Dim,
@@ -405,6 +418,11 @@ fun PlayerScreen(vm: PlayerViewModel) {
                     PlayerCover(bmp, tint, vm.isPlaying, side)
                     PlayerPanel(vm, track, { showQueue = true }, { showTimer = true })
                 }
+            }
+        }
+        if (onClose != null && maxWidth > maxHeight) {
+            IconButton(onClick = onClose, Modifier.align(Alignment.TopStart).padding(4.dp)) {
+                Icon(Icons.Rounded.KeyboardArrowDown, "Minimizar o player", tint = Neon.Green, modifier = Modifier.size(30.dp))
             }
         }
     }
@@ -732,15 +750,15 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
 }
 
 @Composable
-private fun TrackList(
+internal fun TrackList(
     vm: PlayerViewModel, list: List<Track>, name: String, showBack: Boolean,
-    goPlayer: () -> Unit, playlist: String? = null
+    goPlayer: () -> Unit, playlist: String? = null, onBack: () -> Unit = { vm.enterFolder(null) }
 ) {
     var pickFor by remember { mutableStateOf<Track?>(null) }
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (showBack) IconButton(onClick = { vm.enterFolder(null) }) { Icon(Icons.Rounded.ArrowBack, "Voltar", tint = Neon.Green) }
+                if (showBack) IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "Voltar", tint = Neon.Green) }
                 Column(Modifier.weight(1f)) {
                     Text(name, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(plural(list.size), fontSize = 12.sp, color = Neon.Dim)

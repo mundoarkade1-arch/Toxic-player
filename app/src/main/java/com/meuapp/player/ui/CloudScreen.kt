@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -62,10 +64,12 @@ import com.meuapp.player.cloud.CloudTrack
 import com.meuapp.player.cloud.MetaState
 import com.meuapp.player.cloud.SyncProgress
 
-/** Seção TOXIC CLOUD: conta Google, biblioteca do Drive, sincronização, cache e downloads offline. */
+/** Telas da nuvem que ficam fora do menu Ajustes: Início e Buscar. */
+enum class CloudMode { HOME, SEARCH }
+
+/** Login do Google (tela de consentimento). Fica no App, uma vez só, para funcionar em qualquer aba. */
 @Composable
-fun CloudScreen(vm: PlayerViewModel, goPlayer: () -> Unit) {
-    val cloud = vm.cloud
+internal fun CloudAuthEffect(cloud: CloudManager) {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
         if (r.resultCode == Activity.RESULT_OK) cloud.onAuthResult(r.data) else cloud.onAuthCancelled()
     }
@@ -74,18 +78,49 @@ fun CloudScreen(vm: PlayerViewModel, goPlayer: () -> Unit) {
         cloud.authLaunched()
         try { launcher.launch(IntentSenderRequest.Builder(pi).build()) } catch (e: Exception) { cloud.onAuthCancelled() }
     }
-    BackHandler(enabled = cloud.openGroup != null) { cloud.enterGroup(null) }
+}
 
+/** Início (playlists, mixes, descubra) e Buscar. [onNav] troca de aba (2 = Biblioteca). */
+@Composable
+fun CloudScreen(vm: PlayerViewModel, goPlayer: () -> Unit, mode: CloudMode = CloudMode.HOME, onNav: (Int) -> Unit = {}) {
+    val cloud = vm.cloud
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp)) {
-            if (!cloud.connected) ConnectCard(cloud) else ConnectedContent(vm, cloud, goPlayer)
+            if (!cloud.connected) ConnectCard(cloud)
+            else if (mode == CloudMode.SEARCH) CloudSearch(vm, cloud, goPlayer)
+            else CloudHome(vm, cloud, goPlayer, onLibrary = { onNav(2) }) { view, key -> cloud.changeView(view); cloud.enterGroup(key); onNav(2) }
+        }
+    }
+}
+
+/** Buscar: procura em toda a biblioteca do Drive. O menu de cada música guarda numa playlist sua. */
+@Composable
+private fun CloudSearch(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit) {
+    var q by remember { mutableStateOf("") }
+    val results = remember(cloud.tracks, q, cloud.folderPaths) {
+        if (q.isBlank()) emptyList()
+        else CloudLibrary.sort(CloudLibrary.filter(cloud.tracks, q, paths = cloud.folderPaths), CloudLibrary.SORT_TITLE).take(200)
+    }
+    val playerList = remember(results, cloud.playerTracks) { results.mapNotNull { cloud.trackByNumericId(it.numericId) } }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+        item { PageHeader("BUSCAR", "O que você quer ouvir?") }
+        item { SearchField(q, { q = it }, "Música, artista, álbum ou pasta") }
+        if (q.isBlank()) {
+            item { EmptyState(Icons.Rounded.Search, "Digite para buscar no seu Drive. Nos três pontinhos de cada música você guarda ela numa playlist sua.") }
+        } else if (results.isEmpty()) {
+            item { EmptyState(Icons.Rounded.Search, "Nada encontrado para \"${q.trim()}\".") }
+        } else {
+            item { Text("Resultados · ${plural(results.size)}", fontSize = 13.sp, color = Neon.Dim) }
+            items(results.size, key = { results[it].id }) { i ->
+                CloudTrackRow(vm, cloud, results[i]) { vm.playList(playerList, i); goPlayer() }
+            }
         }
     }
 }
 
 @Composable
-private fun ConnectCard(cloud: CloudManager) {
-    PageHeader("TOXIC CLOUD", "Sua música no Drive")
+internal fun ConnectCard(cloud: CloudManager, header: Boolean = true) {
+    if (header) PageHeader("TOXIC CLOUD", "Sua música no Drive")
     Column(
         Modifier.fillMaxWidth().glass(28.dp).padding(22.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -110,10 +145,9 @@ private fun MessageCard(text: String, onClose: () -> Unit) {
     }
 }
 
+/** Biblioteca > Músicas do Drive: pastas, artistas, álbuns, gêneros e todas as músicas (sem sincronização aqui; isso fica em Ajustes). */
 @Composable
-private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit) {
-    var home by remember { mutableStateOf(true) }
-    var confirmDisconnect by remember { mutableStateOf(false) }
+internal fun DriveSongs(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit) {
     var confirmDownload by remember { mutableStateOf<List<CloudTrack>?>(null) }
     val open = cloud.openGroup
 
@@ -134,19 +168,8 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
     }
     val playerList = remember(filtered, cloud.playerTracks) { filtered.mapNotNull { cloud.trackByNumericId(it.numericId) } }
 
-    if (home && open == null) {
-        CloudHome(vm, cloud, goPlayer, onLibrary = { home = false }) { view, key -> cloud.changeView(view); cloud.enterGroup(key); home = false }
-        return
-    }
-
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (open == null) {
-            item { PageHeader("TOXIC CLOUD", "Biblioteca") { GhostButton("← Início", onClick = { home = true }) } }
-            item { AccountCard(cloud) }
-            item { ActionButtons(vm, cloud) { confirmDisconnect = true } }
-            if (cloud.syncing) item { SyncStatus(cloud) }
-            cloud.message?.let { m -> item { MessageCard(m) { cloud.dismissMessage() } } }
-            vm.smartInfo?.let { info -> item { SmartInfoCard(info) { vm.dismissSmartInfo() } } }
             item {
                 SearchField(cloud.query, cloud::changeQuery, "Buscar na nuvem")
             }
@@ -174,7 +197,7 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
             item {
                 EmptyState(
                     Icons.Rounded.CloudQueue,
-                    if (cloud.syncing) "Procurando músicas no seu Drive..." else "Nenhuma música de áudio encontrada no seu Drive. Envie arquivos MP3, FLAC, WAV, M4A, AAC, OGG ou OPUS e toque em Atualizar biblioteca."
+                    if (cloud.syncing) "Procurando músicas no seu Drive..." else "Nenhuma música de áudio encontrada no seu Drive. Envie arquivos MP3, FLAC, WAV, M4A, AAC, OGG ou OPUS e sincronize em Ajustes > Conta e sincronização."
                 )
             }
         } else if (showGroups) {
@@ -188,18 +211,8 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
                 CloudTrackRow(vm, cloud, filtered[i]) { vm.playList(playerList, i); goPlayer() }
             }
         }
-        if (open == null) item { StorageCard(cloud) }
     }
 
-    if (confirmDisconnect) {
-        GlassDialog(
-            onDismissRequest = { confirmDisconnect = false },
-            title = { Text("Desconectar conta Google?") },
-            text = { Text("O acesso do Toxic Player ao seu Drive será revogado. Neste aparelho serão apagados o índice da biblioteca, o cache e os downloads offline. Nada é apagado do seu Drive.") },
-            confirmButton = { TextButton(onClick = { confirmDisconnect = false; cloud.disconnect() }) { Text("Desconectar", color = Neon.Green) } },
-            dismissButton = { TextButton(onClick = { confirmDisconnect = false }) { Text("Cancelar") } }
-        )
-    }
     confirmDownload?.let { list ->
         val bytes = list.sumOf { it.size }
         GlassDialog(
@@ -427,6 +440,36 @@ private fun StorageCard(cloud: CloudManager) {
             text = { Text("As músicas baixadas serão apagadas do aparelho. Elas continuam no seu Drive.") },
             confirmButton = { TextButton(onClick = { confirmOffline = false; cloud.clearOffline() }) { Text("Remover", color = Neon.Green) } },
             dismissButton = { TextButton(onClick = { confirmOffline = false }) { Text("Cancelar") } }
+        )
+    }
+}
+
+
+/** Ajustes > Conta e sincronização: conta Google, sincronizar, playlists do Drive, cache e downloads offline. */
+@Composable
+internal fun CloudSettings(vm: PlayerViewModel) {
+    val cloud = vm.cloud
+    var confirmDisconnect by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!cloud.connected) {
+            ConnectCard(cloud, header = false)
+        } else {
+            AccountCard(cloud)
+            ActionButtons(vm, cloud) { confirmDisconnect = true }
+            if (cloud.syncing) SyncStatus(cloud)
+            cloud.message?.let { MessageCard(it) { cloud.dismissMessage() } }
+            vm.smartInfo?.let { info -> SmartInfoCard(info) { vm.dismissSmartInfo() } }
+            StorageCard(cloud)
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+    if (confirmDisconnect) {
+        GlassDialog(
+            onDismissRequest = { confirmDisconnect = false },
+            title = { Text("Desconectar conta Google?") },
+            text = { Text("O acesso do Toxic Player ao seu Drive será revogado. Neste aparelho serão apagados o índice da biblioteca, o cache e os downloads offline. Nada é apagado do seu Drive.") },
+            confirmButton = { TextButton(onClick = { confirmDisconnect = false; cloud.disconnect() }) { Text("Desconectar", color = Neon.Green) } },
+            dismissButton = { TextButton(onClick = { confirmDisconnect = false }) { Text("Cancelar") } }
         )
     }
 }

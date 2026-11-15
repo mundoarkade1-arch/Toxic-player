@@ -109,7 +109,6 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = Neon.Green)
             }
         }
-        cloud.message?.let { m -> item { Text(m, fontSize = 12.sp, color = Neon.Dim) } }
         vm.smartInfo?.let { info -> item { SmartInfoCard(info) { vm.dismissSmartInfo() } } }
         if (all.isEmpty()) {
             item {
@@ -124,6 +123,24 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { (label, icon, action) -> Shortcut(label, icon, Modifier.weight(1f), action) }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+        val myLists = vm.groups(3).filter { it.count > 0 }
+        if (myLists.isNotEmpty()) {
+            item { Section("Suas playlists") }
+            item {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(myLists, key = { it.path }) { g ->
+                        Column(Modifier.width(140.dp).clip(RoundedCornerShape(20.dp)).clickable {
+                            val l = vm.tracksIn(g.path)
+                            if (l.isNotEmpty()) { vm.playList(l, 0); goPlayer() }
+                        }) {
+                            PlaylistCover(g.name, Modifier.size(140.dp), 48.dp)
+                            Text(g.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                            Text(plural(g.count), fontSize = 11.sp, color = Neon.Dim)
+                        }
+                    }
+                }
             }
         }
         if (mixes.isNotEmpty()) {
