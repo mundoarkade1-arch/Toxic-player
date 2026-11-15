@@ -29,3 +29,9 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 Abas: **Início** (playlists, mixes, descubra), **Buscar** (procura no Drive; menu da música guarda em playlist), **Biblioteca** (Playlists com capas genéricas + Músicas do Drive), **No aparelho** (músicas do celular; permissão só aqui), **Ajustes** (Conta e sincronização, Áudio e equalizador, Atualização do app). O player fica recolhido (mini player) e só abre ao tocar nele; a fila é restaurada na última música.
 Arquivos: `ui/Screens.kt` (App/NavBar), `ui/CloudScreen.kt` (Início/Buscar/DriveSongs/CloudSettings), `ui/PlaylistsScreen.kt` (LibraryHub, capas), `ui/SettingsScreen.kt`, `ui/CloudHome.kt` (seção "Suas playlists").
 **Falta (etapa 2):** modo offline: sem internet o app pergunta se quer entrar no modo offline e só então mostra "No aparelho"; opção em Ajustes para deixar sempre no modo offline.
+
+## Velocidade (etapa de desempenho)
+- Playlists do Drive: `Regex` agora é compilada uma vez (antes recompilava milhares de vezes a cada abertura, na thread principal); palavras de artista e pastas calculadas uma vez; a conta roda em segundo plano (Dispatchers.Default) e é PULADA se biblioteca e arquivo não mudaram (assinatura guardada em `toxic_smart/sig`). `CloudLibrary.normalize` também usa Regex pré-compilada (ajuda busca e filtros).
+- Player: `DefaultLoadControl` (começa a tocar com 1 s de áudio, guarda até 2 min à frente).
+- Capas de playlist: mosaico de 4 capas / capa da primeira música; sem capa, degradê com símbolo.
+- Ideias futuras de velocidade (não feitas): pré-carregar o início das próximas músicas da fila no cache; cache de miniaturas em disco; Baseline Profile.

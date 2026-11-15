@@ -135,7 +135,7 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
                             val l = vm.tracksIn(g.path)
                             if (l.isNotEmpty()) { vm.playList(l, 0); goPlayer() }
                         }) {
-                            PlaylistCover(g.name, Modifier.size(140.dp), 48.dp)
+                            PlaylistCover(vm, g.name, Modifier.size(140.dp), 48.dp)
                             Text(g.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
                             Text(plural(g.count), fontSize = 11.sp, color = Neon.Dim)
                         }

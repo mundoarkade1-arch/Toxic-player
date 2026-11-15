@@ -131,6 +131,8 @@ class SmartMatcher(private val library: List<CloudTrack>) {
     private val byTitle = HashMap<String, MutableList<CloudTrack>>()
     /** Possíveis "fontes de artista" de cada música: artista das tags + artistas deduzidos do nome do arquivo. */
     private val artistSources = HashMap<String, List<String>>()
+    /** Palavras de cada fonte de artista, calculadas UMA vez (antes eram refeitas a cada playlist). */
+    private val artistWordSets = HashMap<String, List<Set<String>>>()
 
     init {
         for (t in library) {
@@ -142,6 +144,7 @@ class SmartMatcher(private val library: List<CloudTrack>) {
             pairs += t.title to (sources.firstOrNull() ?: "")
             for ((title, artist) in namePairs(t.fileName)) { pairs += title to artist; if (artist.isNotEmpty()) sources += artist }
             artistSources[t.id] = sources
+            artistWordSets[t.id] = sources.map { artistWords(it) }.filter { it.isNotEmpty() }
             for ((title, artist) in pairs) {
                 val tk = key(title)
                 if (tk.isEmpty()) continue
@@ -169,10 +172,7 @@ class SmartMatcher(private val library: List<CloudTrack>) {
         val want = artistWords(artist)
         if (want.isEmpty()) return candidates.singleOrNull()     // sem artista no JSON: só aceita se não houver dúvida
         return candidates.firstOrNull { c ->
-            artistSources[c.id].orEmpty().any { src ->
-                val have = artistWords(src)
-                have.isNotEmpty() && (have.containsAll(want) || want.containsAll(have))
-            }
+            artistWordSets[c.id].orEmpty().any { have -> have.containsAll(want) || want.containsAll(have) }
         }
     }
 
@@ -180,14 +180,17 @@ class SmartMatcher(private val library: List<CloudTrack>) {
     fun byArtistRule(name: String): List<CloudTrack> {
         val want = artistWords(name)
         if (want.isEmpty()) return emptyList()
-        return library.filter { t -> artistSources[t.id].orEmpty().any { artistWords(it).containsAll(want) } }
+        return library.filter { t -> artistWordSets[t.id].orEmpty().any { it.containsAll(want) } }
     }
 
     /** Regra "pasta": pasta do Drive cujo último trecho do caminho tem esse nome. */
     fun byFolderRule(name: String, paths: Map<String, String>): List<CloudTrack> {
         val want = key(name.substringAfterLast('/'))
         if (want.isEmpty()) return emptyList()
-        return library.filter { t -> paths[t.parentId]?.let { key(it.substringAfterLast('/')) == want } == true }
+        val matchByParent = HashMap<String, Boolean>()       // uma conta por pasta, não por música
+        return library.filter { t ->
+            matchByParent.getOrPut(t.parentId) { paths[t.parentId]?.let { key(it.substringAfterLast('/')) == want } == true }
+        }
     }
 
     /** Regra "lista": casa cada item por título + artista. */
@@ -195,10 +198,13 @@ class SmartMatcher(private val library: List<CloudTrack>) {
 
     companion object {
         private val STOP = setOf("e", "x", "and")
+        private val APOSTROPHES = Regex("['\u2019\u0060]")
+        private val NON_ALNUM = Regex("[^\\p{L}\\p{N}]+")
+        private val LEADING_NUMBER = Regex("^\\(?\\d{1,3}\\)?\\s*[-.)]*\\s+")
 
         /** Minúsculas, sem acentos (CloudLibrary.normalize), sem apóstrofos e sem pontuação. */
         fun key(s: String): String =
-            CloudLibrary.normalize(s).replace(Regex("['’`]"), "").replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+            CloudLibrary.normalize(s).replace(APOSTROPHES, "").replace(NON_ALNUM, " ").trim()
 
         /** Palavras do nome de um artista, sem "e", "&", "x" e "and". */
         fun artistWords(s: String): Set<String> = key(s).split(' ').filter { it.isNotEmpty() && it !in STOP }.toSet()
@@ -206,7 +212,7 @@ class SmartMatcher(private val library: List<CloudTrack>) {
         /** "Cantor - Música" ou "Música - Cantor": as duas ordens possíveis, como (título, artista). */
         fun namePairs(fileName: String): List<Pair<String, String>> {
             var base = fileName.substringBeforeLast('.', fileName).trim().replace('_', ' ')
-            base = base.replace(Regex("^\\(?\\d{1,3}\\)?\\s*[-.)]*\\s+"), "").trim()
+            base = base.replace(LEADING_NUMBER, "").trim()
             val parts = base.split(" - ")
             return if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank())
                 listOf(parts[1].trim() to parts[0].trim(), parts[0].trim() to parts[1].trim())

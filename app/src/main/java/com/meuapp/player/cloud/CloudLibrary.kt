@@ -17,8 +17,10 @@ object CloudLibrary {
     data class Group(val key: String, val name: String, val count: Int)
 
     /** Minúsculas e sem acentos: "Açaí" encontra "acai". */
+    private val MARKS = Regex("\\p{M}+")      // compilada uma vez só (antes era recompilada a cada chamada)
+
     fun normalize(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase()
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(MARKS, "").lowercase()
 
     /**
      * [group] é "A:artista" ou "B:álbum" (ou null). [offlineIds] só é usado com [offlineOnly].

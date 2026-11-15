@@ -58,34 +58,74 @@ class SmartPlaylistManager(
     }
 
     // ---------- aplicar ----------
-    /** Aplica [file] à biblioteca atual e grava o resultado. Devolve o resultado, ou null se a biblioteca ainda está vazia. */
+    /** Assinatura barata da biblioteca + arquivo: se não mudou desde a última vez, não precisa refazer a conta. */
+    private fun signature(lib: List<CloudTrack>, file: SmartFile): String {
+        var h = 1L
+        for (t in lib) h = h * 31 + t.id.hashCode() + t.parentId.hashCode() * 7L + t.title.hashCode() * 13L + t.artist.hashCode() * 17L
+        return "${lib.size}:$h:${file.generated}:${file.playlists.size}"
+    }
+
+    /** Grava o resultado (thread principal). Junta com as playlists de AGORA, para nunca pisar numa edição feita no meio do caminho. */
+    private fun finish(out: SmartOutcome, synced: Map<String, Set<Long>>, ignoreDismissed: Boolean) {
+        val nowAll = playlists()
+        val changed = LinkedHashMap<String, List<Long>>()
+        val newSynced = HashMap(synced)
+        for (r in out.results) {
+            if (r.created || r.addedIds.isNotEmpty()) {
+                val now = nowAll[r.name].orEmpty()
+                val nowSet = now.toHashSet()
+                changed[r.name] = now + r.addedIds.filter { it !in nowSet }
+            }
+            newSynced[r.name] = r.syncedIds
+        }
+        if (changed.isNotEmpty()) commit(changed)
+        val ed = prefs.edit().putString("added", SmartState.addedToJson(newSynced))
+        if (ignoreDismissed) ed.putString("dismissed", SmartState.namesToJson(emptySet()))
+        ed.apply()
+        lastReport = SmartPlaylists.unmatchedReport(out)
+    }
+
+    /** Aplica [file] na thread principal (usado só ao importar um arquivo à mão). Devolve null se a biblioteca ainda está vazia. */
     private fun applyFile(file: SmartFile, ignoreDismissed: Boolean): SmartOutcome? {
         val lib = library()
         if (lib.isEmpty()) return null
         val skip = if (ignoreDismissed) emptySet() else dismissed()
         val synced = added()
         val out = SmartPlaylists.apply(file, lib, paths(), playlists(), synced, skip)
-        val changed = LinkedHashMap<String, List<Long>>()
-        val newSynced = HashMap(synced)
-        for (r in out.results) {
-            if (r.created || r.addedIds.isNotEmpty()) changed[r.name] = r.finalIds
-            newSynced[r.name] = r.syncedIds
-        }
-        if (changed.isNotEmpty()) commit(changed)
-        prefs.edit().putString("added", SmartState.addedToJson(newSynced)).apply()
-        if (ignoreDismissed) prefs.edit().putString("dismissed", SmartState.namesToJson(emptySet())).apply()
-        lastReport = SmartPlaylists.unmatchedReport(out)
+        finish(out, synced, ignoreDismissed)
+        prefs.edit().putString("sig", signature(lib, file)).apply()
         return out
     }
 
-    /** Reaplica as regras guardadas (sem internet). Chamado ao abrir o app e depois de cada sincronização. */
+    /**
+     * Aplica sem travar a tela: a conta pesada roda em segundo plano e só o resultado volta à thread principal.
+     * Se nada mudou desde a última vez (e não é [force]), pula tudo e devolve um resultado vazio.
+     */
+    private suspend fun applyAsync(file: SmartFile, ignoreDismissed: Boolean, force: Boolean): SmartOutcome? {
+        val lib = library()
+        if (lib.isEmpty()) return null
+        val sig = signature(lib, file)
+        if (!force && sig == prefs.getString("sig", null)) return SmartOutcome(emptyList())
+        val pathsNow = paths()
+        val currentNow = playlists()
+        val skip = if (ignoreDismissed) emptySet() else dismissed()
+        val synced = added()
+        val out = withContext(Dispatchers.Default) { SmartPlaylists.apply(file, lib, pathsNow, currentNow, synced, skip) }
+        finish(out, synced, ignoreDismissed)
+        prefs.edit().putString("sig", sig).apply()
+        return out
+    }
+
+    /** Reaplica as regras guardadas (sem internet), em segundo plano. Ao abrir o app e depois de cada sincronização. */
     fun reapplyStored(announce: Boolean = false) {
-        try {
-            val f = storedFile() ?: return
-            val out = applyFile(f, ignoreDismissed = false) ?: return
-            if (announce || out.updated > 0) say(SmartPlaylists.describe(out))
-        } catch (e: CancellationException) { throw e
-        } catch (e: Exception) { /* nunca derruba o app */ }
+        scope.launch(Dispatchers.Main) {
+            try {
+                val f = withContext(Dispatchers.Default) { storedFile() } ?: return@launch
+                val out = applyAsync(f, ignoreDismissed = false, force = announce) ?: return@launch
+                if (announce || out.updated > 0) say(SmartPlaylists.describe(out))
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) { /* nunca derruba o app */ }
+        }
     }
 
     /** Importa um arquivo .json escolhido pelo usuário. Devolve uma frase simples. */
@@ -145,7 +185,7 @@ class SmartPlaylistManager(
                 try {
                     if (newFile != null) saveFile(newFile, driveModified)
                     val file = newFile ?: storedFile()
-                    val out = if (file != null) applyFile(file, ignoreDismissed = false) else null
+                    val out = if (file != null) applyAsync(file, ignoreDismissed = false, force = manual) else null
                     if (msg != null && (manual || loudNow)) { lastReport = ""; say(msg) }
                     else if (out != null && (manual || out.updated > 0)) say(SmartPlaylists.describe(out))
                     else if (out == null && manual && file != null) { lastReport = ""; say("A biblioteca da nuvem ainda está vazia. Sincronize a Cloud e tente de novo.") }

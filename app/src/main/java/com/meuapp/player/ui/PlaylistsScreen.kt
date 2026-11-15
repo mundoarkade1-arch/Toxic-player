@@ -17,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -29,11 +31,38 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Capa genérica de playlist: degradê numa cor própria de cada nome, com um símbolo (coração nas curtidas). */
+/**
+ * Capa de playlist: se as músicas têm capa, monta uma automaticamente (mosaico de 4 capas, ou a capa da primeira);
+ * se não tem nenhuma, cria uma genérica: degradê numa cor própria de cada nome, com um símbolo (coração nas curtidas).
+ */
 @Composable
-internal fun PlaylistCover(name: String, modifier: Modifier = Modifier, iconSize: androidx.compose.ui.unit.Dp = 44.dp) {
-    val hue = CloudHomeLogic.hueOf(name)
+internal fun PlaylistCover(vm: PlayerViewModel, name: String, modifier: Modifier = Modifier, iconSize: androidx.compose.ui.unit.Dp = 44.dp) {
+    val ids = vm.playlists[name]
+    val withCover = remember(ids) { vm.tracksIn("P:$name").take(60).filter { it.cloudId == null || it.coverStamp != 0L }.take(4) }
+    val c0 = rememberCover(withCover.getOrNull(0), 200).value
+    val c1 = rememberCover(withCover.getOrNull(1), 200).value
+    val c2 = rememberCover(withCover.getOrNull(2), 200).value
+    val c3 = rememberCover(withCover.getOrNull(3), 200).value
+    val bitmaps = listOfNotNull(c0, c1, c2, c3)
     val shape = RoundedCornerShape(20.dp)
+    if (bitmaps.isNotEmpty()) {
+        Box(modifier.clip(shape).border(1.dp, Color.White.copy(alpha = 0.16f), shape)) {
+            if (bitmaps.size >= 4) {
+                Column(Modifier.fillMaxSize()) {
+                    for (row in 0..1) Row(Modifier.weight(1f).fillMaxWidth()) {
+                        for (col in 0..1) Image(
+                            bitmaps[row * 2 + col].asImageBitmap(), null,
+                            Modifier.weight(1f).fillMaxHeight(), contentScale = ContentScale.Crop
+                        )
+                    }
+                }
+            } else {
+                Image(bitmaps[0].asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            }
+        }
+        return
+    }
+    val hue = CloudHomeLogic.hueOf(name)
     Box(
         modifier.clip(shape)
             .background(Brush.linearGradient(listOf(Color.hsv(hue, 0.62f, 0.66f), Color.hsv((hue + 38f) % 360f, 0.78f, 0.22f))))
@@ -97,7 +126,7 @@ private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit) {
                 row.forEach { g ->
                     val name = g.name
                     Column(Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).clickable { open = name }) {
-                        PlaylistCover(name, Modifier.fillMaxWidth().aspectRatio(1f), 52.dp)
+                        PlaylistCover(vm, name, Modifier.fillMaxWidth().aspectRatio(1f), 52.dp)
                         Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
                         Text(plural(g.count), fontSize = 11.sp, color = Neon.Dim)
                     }

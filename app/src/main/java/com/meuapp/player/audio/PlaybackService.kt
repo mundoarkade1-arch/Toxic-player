@@ -9,6 +9,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
@@ -42,7 +43,14 @@ class PlaybackService : MediaSessionService() {
             CloudPlayback.dataSourceFactory(this),
             DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)   // seek em MP3 CBR sem índice
         )
+        // Começa a tocar mais cedo (1 s de áudio em vez de 2,5 s) e guarda mais áudio à frente (até 2 min),
+        // o que ajuda a música seguinte a já estar carregada quando a atual termina.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(30_000, 120_000, 1_000, 3_000)
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
         val player = ExoPlayer.Builder(this, renderers)
+            .setLoadControl(loadControl)
             .setMediaSourceFactory(mediaSources)
             .setAudioAttributes(
                 AudioAttributes.Builder()
