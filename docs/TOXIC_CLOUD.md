@@ -20,3 +20,11 @@
 
 ## Segurança (revisão)
 Sem tokens em disco, logs ou mensagens; sem links públicos; `Authorization` só em cabeçalho; redirecionamentos da API não seguidos com token; ids validados por regex; respostas JSON lidas de forma defensiva; erros traduzidos sem corpo da resposta; `allowBackup=false` já existente; tráfego só HTTPS; sem Client Secret no código; `.gitignore` bloqueia credenciais. Observação: o `DefaultHttpDataSource` do player segue redirecionamentos HTTPS e reenvia o cabeçalho; o endpoint de download da API pertence ao Google.
+
+
+## Playlists do site (JSON)
+O site grava `playlists-inteligentes.json` na pasta "Toxic Playlists" do Drive. O app só LÊ esse arquivo (escopo `drive.readonly`, nada muda) e o aplica às playlists:
+1. Casamento por `id` do Drive, depois por nome do arquivo (`fn`), depois por título + artista normalizados.
+2. `faixas` com `id` são a base; a `regra` (artista, pasta, lista) complementa. Nunca remove faixa; o que o usuário tirou não volta; playlist apagada pelo usuário não é recriada.
+3. Reaplicado depois de cada sincronização e ao abrir o app. O arquivo só é baixado de novo se o `modifiedTime` mudou.
+4. Código: `cloud/SmartPlaylists.kt` (lógica pura) e `cloud/SmartPlaylistManager.kt` (Drive + armazenamento).

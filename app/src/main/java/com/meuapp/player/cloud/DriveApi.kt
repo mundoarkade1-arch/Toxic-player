@@ -59,6 +59,28 @@ class DriveApi(private val tokens: TokenProvider = DefaultTokens) {
         return DriveJson.parseFoldersPage(getText(sb.toString()))
     }
 
+    /**
+     * Acha o "playlists-inteligentes.json" criado pelo site: primeiro dentro da pasta "Toxic Playlists";
+     * se não achar a pasta, procura o arquivo em qualquer lugar. Devolve o mais recente. Só LÊ (drive.readonly).
+     */
+    fun findPlaylistsFile(): DriveNamedFile? {
+        val folders = listNamed("mimeType='application/vnd.google-apps.folder' and name='${CloudConfig.PLAYLISTS_FOLDER}' and trashed=false")
+        for (f in folders) {
+            val files = listNamed("name='${CloudConfig.PLAYLISTS_FILE}' and '${f.id}' in parents and trashed=false")
+            if (files.isNotEmpty()) return files.first()
+        }
+        return listNamed("name='${CloudConfig.PLAYLISTS_FILE}' and trashed=false").firstOrNull()
+    }
+
+    private fun listNamed(q: String): List<DriveNamedFile> {
+        val path = "/files?q=" + enc(q) + "&fields=" + enc("files(id,name,modifiedTime,size,trashed)") +
+            "&orderBy=" + enc("modifiedTime desc") + "&pageSize=20&spaces=drive&corpora=user"
+        return DriveJson.parseNamedFiles(getText(path))
+    }
+
+    /** Baixa o conteúdo de um arquivo de texto pequeno (até 16 MB). */
+    fun readTextFile(fileId: String): String = getText("/files/$fileId?alt=media&supportsAllDrives=true")
+
     fun startPageToken(): String {
         val t = org.json.JSONObject(getText("/changes/startPageToken")).optString("startPageToken")
         if (t.isBlank()) throw CloudException(CloudErrorKind.SYNC_ERROR)

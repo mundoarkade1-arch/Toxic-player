@@ -17,6 +17,9 @@ data class DriveFile(
 
 data class DriveFolder(val id: String, val name: String, val parentId: String)
 
+/** Arquivo qualquer (não só áudio) achado por nome; usado para o JSON de playlists. */
+data class DriveNamedFile(val id: String, val name: String, val modifiedTime: String, val size: Long)
+
 /** Uma entrada do feed de mudanças (changes.list). [file] é null quando o arquivo foi removido ou não é áudio. */
 data class DriveChange(val fileId: String, val removed: Boolean, val file: DriveFile?)
 
@@ -60,6 +63,19 @@ object DriveJson {
             out += DriveFolder(id, o.optString("name"), o.optJSONArray("parents")?.optString(0).orEmpty())
         }
         return out to j.optString("nextPageToken").ifBlank { null }
+    }
+
+    /** Arquivos achados por nome (id, nome, data, tamanho). Entradas inválidas ou na lixeira são ignoradas. */
+    fun parseNamedFiles(text: String): List<DriveNamedFile> {
+        val arr = JSONObject(text).optJSONArray("files") ?: return emptyList()
+        val out = ArrayList<DriveNamedFile>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val id = o.optString("id").takeIf { it.isNotBlank() && it.length <= 200 && ID_REGEX.matches(it) } ?: continue
+            if (o.optBoolean("trashed", false)) continue
+            out += DriveNamedFile(id, o.optString("name"), o.optString("modifiedTime"), o.optString("size").toLongOrNull() ?: 0L)
+        }
+        return out
     }
 
     fun parseChangesPage(text: String): ChangesPage {

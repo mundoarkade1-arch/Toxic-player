@@ -39,5 +39,9 @@ object CloudConfig {
     /** Folga de espaço livre exigida antes de baixar uma música para o modo offline. */
     const val FREE_SPACE_RESERVE = 100L * 1024 * 1024
 
+    /** Onde o site grava as playlists inteligentes no Drive (raiz do Drive). */
+    const val PLAYLISTS_FOLDER = "Toxic Playlists"
+    const val PLAYLISTS_FILE = "playlists-inteligentes.json"
+
     fun playbackUri(fileId: String): String = "$SCHEME://$HOST/$fileId"
 }

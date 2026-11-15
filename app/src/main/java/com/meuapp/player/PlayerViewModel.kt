@@ -32,6 +32,8 @@ import com.meuapp.player.cloud.CloudAuth
 import com.meuapp.player.cloud.CloudErrorKind
 import com.meuapp.player.cloud.CloudManager
 import com.meuapp.player.cloud.CloudPlayback
+import com.meuapp.player.cloud.DriveApi
+import com.meuapp.player.cloud.SmartPlaylistManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -76,6 +78,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // Toxic Cloud: biblioteca na nuvem, sincronização, cache e downloads offline.
     val cloud = CloudManager(app, viewModelScope)
+
+    // Playlists inteligentes (JSON do site no Drive). Só lógica: as telas chamam importSmartPlaylistsJson / syncSmartPlaylistsNow.
+    val smart = SmartPlaylistManager(
+        app, DriveApi(), viewModelScope,
+        library = { cloud.tracks }, paths = { cloud.folderPaths }, playlists = { playlists.toMap() },
+        commit = { changed -> changed.forEach { (k, v) -> playlists[k] = v }; savePlaylists() },
+        notify = { cloud.appendMessage(it) }
+    )
     private var localLoaded = false
     @Volatile private var pendingRetry = false      // erro de rede/sessão: retomar quando possível
     private var tokenRetried = false
@@ -153,7 +163,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         AudioFx.init(app)
         loadPlaylists()
         try { connectivity?.registerDefaultNetworkCallback(netCallback) } catch (e: Exception) { /* sem monitor de rede: retomada só manual */ }
-        cloud.onIndexLoaded = { syncOrRestore(); refreshCurrent(); refreshQueue(); cloud.maybeAutoSync() }
+        cloud.onIndexLoaded = { syncOrRestore(); refreshCurrent(); refreshQueue(); smart.reapplyStored(); cloud.maybeAutoSync() }
+        cloud.onSynced = { smart.onLibrarySynced() }
         val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
         val future = MediaController.Builder(app, token).buildAsync()
         future.addListener({
@@ -454,8 +465,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         return matched.size
     }
 
+    /** Playlists do site (JSON): para as telas usarem depois. Devolvem uma frase simples para mostrar. */
+    fun importSmartPlaylistsJson(text: String?): String = smart.importText(text)
+    fun syncSmartPlaylistsNow() = smart.syncFromDrive(manual = true)
+
     fun deletePlaylist(name: String) {
         if (name == FAVORITES) return
+        smart.forget(name)
         playlists.remove(name); savePlaylists()
         if (openFolder == "P:$name") openFolder = null
     }

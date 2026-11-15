@@ -77,6 +77,12 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
     fun enterGroup(k: String?) { openGroup = k }
     fun dismissMessage() { message = null }
 
+    /** Acrescenta uma frase à mensagem atual (usado pelas playlists do Drive). */
+    fun appendMessage(text: String) { message = message?.let { "$it $text" } ?: text }
+
+    /** Chamado (na thread principal) depois de cada sincronização concluída com sucesso. */
+    var onSynced: (() -> Unit)? = null
+
     /** O player só restaura a fila depois de conhecer as músicas da nuvem. */
     var indexLoaded = false; private set
     var onIndexLoaded: (() -> Unit)? = null
@@ -235,6 +241,7 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
                 message = r.enrichError?.message ?: if (r.full) "Biblioteca atualizada: ${tracks.size} músicas."
                 else if (r.added + r.modified + r.removed == 0) "Biblioteca já está em dia."
                 else "Sincronizado: +${r.added} novas, ${r.modified} alteradas, ${r.removed} removidas."
+                try { onSynced?.invoke() } catch (e: Exception) { /* playlists do Drive nunca podem estragar a sincronização */ }
             }
         } catch (e: CancellationException) { throw e
         } catch (e: Exception) {
