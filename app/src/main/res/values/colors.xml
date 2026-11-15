@@ -1,4 +1,5 @@
 <resources>
-    <color name="bg">#040705</color>
+    <color name="bg">#040806</color>
     <color name="neon">#2BFF88</color>
+    <color name="lime">#C4FF3D</color>
 </resources>

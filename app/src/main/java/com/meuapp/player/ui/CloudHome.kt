@@ -2,10 +2,12 @@ package com.meuapp.player.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,7 +49,7 @@ import java.util.Calendar
 
 private class Mix(val title: String, val subtitle: String, val tracks: List<CloudTrack>, val hue: Float)
 
-private fun gradient(hue: Float) = Brush.linearGradient(listOf(Color.hsv(hue, 0.65f, 0.55f), Color.hsv((hue + 40f) % 360f, 0.7f, 0.25f)))
+private fun gradient(hue: Float) = Brush.linearGradient(listOf(Color.hsv(hue, 0.62f, 0.66f), Color.hsv((hue + 38f) % 360f, 0.78f, 0.22f)))
 
 /**
  * Tela inicial do Toxic Cloud: saudação, atalhos, carrosséis e mixes gerados da biblioteca do próprio usuário.
@@ -91,12 +93,12 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
         })
     }
 
-    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("TOXIC CLOUD", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
-                    Text(CloudHomeLogic.greeting(hour), fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                    Text("TOXIC CLOUD", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp, fontWeight = FontWeight.SemiBold)
+                    Text(CloudHomeLogic.greeting(hour), fontSize = 28.sp, fontWeight = FontWeight.Bold)
                 }
                 GhostButton("Biblioteca", onClick = onLibrary)
             }
@@ -110,9 +112,9 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
         cloud.message?.let { m -> item { Text(m, fontSize = 12.sp, color = Neon.Dim) } }
         if (all.isEmpty()) {
             item {
-                Text(
-                    if (cloud.syncing) "Procurando músicas no seu Drive..." else "Sua biblioteca está vazia. Envie músicas para o Drive e toque em Biblioteca > Atualizar biblioteca.",
-                    color = Neon.Dim, modifier = Modifier.padding(vertical = 12.dp)
+                EmptyState(
+                    Icons.Rounded.CloudQueue,
+                    if (cloud.syncing) "Procurando músicas no seu Drive..." else "Sua biblioteca está vazia. Envie músicas para o Drive e toque em Biblioteca > Atualizar biblioteca."
                 )
             }
             return@LazyColumn
@@ -152,8 +154,9 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     row.forEach { g ->
                         Box(
-                            Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(14.dp)).background(gradient(CloudHomeLogic.hueOf(g.name)))
-                                .clickable { onOpen(3, "G:${g.name}") }.padding(12.dp)
+                            Modifier.weight(1f).height(88.dp).clip(RoundedCornerShape(20.dp)).background(gradient(CloudHomeLogic.hueOf(g.name)))
+                                .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(20.dp))
+                                .clickable { onOpen(3, "G:${g.name}") }.padding(14.dp)
                         ) {
                             Text(g.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text("${g.count}", fontSize = 11.sp, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.BottomStart))
@@ -172,26 +175,33 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
 }
 
 @Composable
-private fun Section(text: String) = Text(text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
+private fun Section(text: String) = Text(text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
 
 @Composable
 private fun Shortcut(label: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
-    Row(modifier.height(56.dp).glass(12.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(56.dp).background(Neon.Green.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = Neon.Green)
-        }
-        Text(label, Modifier.padding(horizontal = 10.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    Row(modifier.height(58.dp).glass(18.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(58.dp).background(Brush.linearGradient(listOf(Neon.Green.copy(alpha = 0.30f), Neon.Lime.copy(alpha = 0.10f)))),
+            contentAlignment = Alignment.Center
+        ) { Icon(icon, null, tint = Neon.Green) }
+        Text(label, Modifier.padding(horizontal = 12.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
 private fun MixCard(m: Mix, onClick: () -> Unit) {
-    Column(Modifier.width(150.dp).clickable(onClick = onClick)) {
-        Box(Modifier.size(150.dp).clip(RoundedCornerShape(14.dp)).background(gradient(m.hue)).padding(12.dp)) {
-            Icon(Icons.Rounded.Shuffle, null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.align(Alignment.TopEnd))
-            Text(m.title, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.align(Alignment.BottomStart), maxLines = 3, overflow = TextOverflow.Ellipsis)
+    Column(Modifier.width(158.dp).clickable(onClick = onClick)) {
+        Box(
+            Modifier.size(158.dp).clip(RoundedCornerShape(22.dp)).background(gradient(m.hue))
+                .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(22.dp)).padding(14.dp)
+        ) {
+            Box(
+                Modifier.size(34.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.28f)).align(Alignment.TopEnd),
+                contentAlignment = Alignment.Center
+            ) { Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
+            Text(m.title, fontWeight = FontWeight.Bold, fontSize = 19.sp, modifier = Modifier.align(Alignment.BottomStart), maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
-        Text(m.subtitle, fontSize = 11.sp, color = Neon.Dim, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+        Text(m.subtitle, fontSize = 11.sp, color = Neon.Dim, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
     }
 }
 
@@ -203,7 +213,11 @@ private fun TrackRow(cloud: CloudManager, list: List<CloudTrack>, onPlay: (Int) 
             val pt = remember(t, cloud.playerTracks) { cloud.trackByNumericId(t.numericId) }
             val cover by rememberCover(pt, 320)
             Column(Modifier.width(140.dp).clickable { onPlay(i) }) {
-                Box(Modifier.size(140.dp).clip(RoundedCornerShape(12.dp)).background(Neon.Glass), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.size(140.dp).clip(RoundedCornerShape(20.dp)).background(Neon.Glass)
+                        .border(1.dp, Neon.Border, RoundedCornerShape(20.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
                     val c = cover
                     if (c != null) Image(c.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     else Icon(Icons.Rounded.MusicNote, null, tint = Neon.Dim, modifier = Modifier.size(40.dp))
@@ -220,12 +234,16 @@ private fun ArtistCard(cloud: CloudManager, name: String, count: Int, sample: Cl
     val pt = remember(sample, cloud.playerTracks) { cloud.trackByNumericId(sample.numericId) }
     val cover by rememberCover(pt, 256)
     Column(Modifier.width(110.dp).clickable(onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(110.dp).clip(CircleShape).background(gradient(CloudHomeLogic.hueOf(name))), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(110.dp).clip(CircleShape).background(gradient(CloudHomeLogic.hueOf(name)))
+                .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
             val c = cover
             if (c != null) Image(c.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Text(name.take(1).uppercase(), fontSize = 36.sp, fontWeight = FontWeight.Bold)
         }
         Text(name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-        Text("$count músicas", fontSize = 11.sp, color = Neon.Dim)
+        Text(plural(count), fontSize = 11.sp, color = Neon.Dim)
     }
 }

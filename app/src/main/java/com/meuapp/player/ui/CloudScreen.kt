@@ -29,9 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,10 +46,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -85,12 +85,17 @@ fun CloudScreen(vm: PlayerViewModel, goPlayer: () -> Unit) {
 
 @Composable
 private fun ConnectCard(cloud: CloudManager) {
-    Text("TOXIC CLOUD", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
-    Text("Sua música no Google Drive", fontSize = 22.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 12.dp))
-    Column(Modifier.fillMaxWidth().glass().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Icon(Icons.Rounded.Cloud, null, tint = Neon.Green, modifier = Modifier.size(40.dp))
-        Text("Conecte sua conta Google para tocar pela internet as músicas que já estão no seu Drive, sem baixar tudo para o celular.", color = Neon.Dim)
-        Text("O app pede acesso somente de leitura ao Drive, não guarda sua senha e você pode desconectar quando quiser.", color = Neon.Dim, fontSize = 12.sp)
+    PageHeader("TOXIC CLOUD", "Sua música no Drive")
+    Column(
+        Modifier.fillMaxWidth().glass(28.dp).padding(22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Box(
+            Modifier.size(76.dp).clip(CircleShape).background(Brush.linearGradient(listOf(Neon.Green.copy(alpha = 0.32f), Neon.Lime.copy(alpha = 0.10f)))),
+            contentAlignment = Alignment.Center
+        ) { Icon(Icons.Rounded.Cloud, null, tint = Neon.Green, modifier = Modifier.size(38.dp)) }
+        Text("Conecte sua conta Google para tocar pela internet as músicas que já estão no seu Drive, sem baixar tudo para o celular.", color = Neon.Dim, textAlign = TextAlign.Center)
+        Text("O app pede acesso somente de leitura ao Drive, não guarda sua senha e você pode desconectar quando quiser.", color = Neon.Faint, fontSize = 12.sp, textAlign = TextAlign.Center)
         PrimaryButton(if (cloud.connecting) "Conectando..." else "Conectar conta Google") { cloud.connect() }
     }
     cloud.message?.let { MessageCard(it) { cloud.dismissMessage() } }
@@ -136,17 +141,13 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (open == null) {
-            item { Row { Chip("← Início", false) { home = true } } }
+            item { PageHeader("TOXIC CLOUD", "Biblioteca") { GhostButton("← Início", onClick = { home = true }) } }
             item { AccountCard(cloud) }
             item { ActionButtons(cloud) { confirmDisconnect = true } }
             if (cloud.syncing) item { SyncStatus(cloud) }
             cloud.message?.let { m -> item { MessageCard(m) { cloud.dismissMessage() } } }
             item {
-                OutlinedTextField(
-                    value = cloud.query, onValueChange = cloud::changeQuery, singleLine = true,
-                    label = { Text("Buscar na nuvem") }, leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                SearchField(cloud.query, cloud::changeQuery, "Buscar na nuvem")
             }
             item { Filters(cloud, base) }
         } else {
@@ -170,9 +171,9 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
         }
         if (base.isEmpty()) {
             item {
-                Text(
-                    if (cloud.syncing) "Procurando músicas no seu Drive..." else "Nenhuma música de áudio encontrada no seu Drive. Envie arquivos MP3, FLAC, WAV, M4A, AAC, OGG ou OPUS e toque em Atualizar biblioteca.",
-                    color = Neon.Dim, modifier = Modifier.padding(vertical = 8.dp)
+                EmptyState(
+                    Icons.Rounded.CloudQueue,
+                    if (cloud.syncing) "Procurando músicas no seu Drive..." else "Nenhuma música de áudio encontrada no seu Drive. Envie arquivos MP3, FLAC, WAV, M4A, AAC, OGG ou OPUS e toque em Atualizar biblioteca."
                 )
             }
         } else if (showGroups) {
@@ -180,7 +181,7 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
                 GroupCard(g.name, g.count, when (cloud.viewMode) { 1 -> Icons.Rounded.Person; 2 -> Icons.Rounded.Album; 5 -> Icons.Rounded.Folder; else -> Icons.Rounded.LibraryMusic }) { cloud.enterGroup(g.key) }
             }
         } else if (filtered.isEmpty()) {
-            item { Text("Nada encontrado com estes filtros.", color = Neon.Dim, modifier = Modifier.padding(vertical = 8.dp)) }
+            item { EmptyState(Icons.Rounded.Search, "Nada encontrado com estes filtros.") }
         } else {
             items(filtered.size, key = { filtered[it].id }) { i ->
                 CloudTrackRow(vm, cloud, filtered[i]) { vm.playList(playerList, i); goPlayer() }
@@ -190,7 +191,7 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
     }
 
     if (confirmDisconnect) {
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { confirmDisconnect = false },
             title = { Text("Desconectar conta Google?") },
             text = { Text("O acesso do Toxic Player ao seu Drive será revogado. Neste aparelho serão apagados o índice da biblioteca, o cache e os downloads offline. Nada é apagado do seu Drive.") },
@@ -200,7 +201,7 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
     }
     confirmDownload?.let { list ->
         val bytes = list.sumOf { it.size }
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { confirmDownload = null },
             title = { Text("Baixar para ouvir offline?") },
             text = { Text(if (list.isEmpty()) "Todas as músicas desta lista já estão offline." else "${list.size} músicas, ${CloudLibrary.formatSize(bytes)} de espaço no aparelho.") },
@@ -215,17 +216,20 @@ private fun ConnectedContent(vm: PlayerViewModel, cloud: CloudManager, goPlayer:
 @Composable
 private fun AccountCard(cloud: CloudManager) {
     val pending = cloud.tracks.count { it.metaState == MetaState.PENDING }
-    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("TOXIC CLOUD", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp)
+    val who = cloud.accountName.ifBlank { "Conta Google" }
+    Column(Modifier.fillMaxWidth().glass(24.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.CloudDone, null, tint = Neon.Green, modifier = Modifier.size(32.dp))
+            Box(Modifier.size(44.dp).clip(CircleShape).background(Neon.Brand), contentAlignment = Alignment.Center) {
+                Text(who.take(1).uppercase(), color = Neon.OnGreen, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(cloud.accountName.ifBlank { "Conta Google" }, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(who, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (cloud.accountEmail.isNotBlank()) Text(cloud.accountEmail, fontSize = 12.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            Icon(Icons.Rounded.CloudDone, null, tint = Neon.Green, modifier = Modifier.size(26.dp))
         }
         val state = if (cloud.syncing) "Sincronizando" else "Conectado"
-        Text("$state · ${cloud.tracks.size} músicas" + if (pending > 0 && !cloud.syncing) " · $pending sem metadados" else "", fontSize = 13.sp)
+        Text("$state · ${cloud.tracks.size} músicas" + if (pending > 0 && !cloud.syncing) " · $pending sem metadados" else "", fontSize = 13.sp, fontWeight = FontWeight.Medium)
         val last = if (cloud.lastSyncMs > 0) "Última sincronização " + DateUtils.getRelativeTimeSpanString(
             cloud.lastSyncMs, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString().lowercase() else "Ainda não sincronizado"
         Text(last, fontSize = 12.sp, color = Neon.Dim)
@@ -302,16 +306,8 @@ private fun Filters(cloud: CloudManager, all: List<CloudTrack>) {
 }
 
 @Composable
-private fun GroupCard(name: String, count: Int, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().glass(18.dp).clickable(onClick = onClick).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = Neon.Green, modifier = Modifier.size(28.dp))
-        Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-            Text(name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("$count músicas", fontSize = 12.sp, color = Neon.Dim)
-        }
-        Icon(Icons.Rounded.PlayArrow, null, tint = Neon.Dim)
-    }
-}
+private fun GroupCard(name: String, count: Int, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) =
+    GroupTile(name, count, icon, onClick)
 
 @Composable
 private fun CloudTrackRow(vm: PlayerViewModel, cloud: CloudManager, t: CloudTrack, onPlay: () -> Unit) {
@@ -322,18 +318,19 @@ private fun CloudTrackRow(vm: PlayerViewModel, cloud: CloudManager, t: CloudTrac
     var menu by remember { mutableStateOf(false) }
     var addDialog by remember { mutableStateOf(false) }
     val fav = vm.isFav(t.numericId)
+    val rowShape = RoundedCornerShape(18.dp)
     Row(
-        Modifier.fillMaxWidth().glass(18.dp).clickable(onClick = onPlay).padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 2.dp),
+        Modifier.fillMaxWidth().clip(rowShape)
+            .then(
+                if (now) Modifier.background(Neon.Green.copy(alpha = 0.10f)).border(1.dp, Neon.Green.copy(alpha = 0.35f), rowShape)
+                else Modifier.background(Neon.Glass)
+            )
+            .clickable(onClick = onPlay).padding(start = 10.dp, top = 8.dp, bottom = 8.dp, end = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val thumb by rememberCover(pt, 128)
-        Box(Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(Neon.Glass), contentAlignment = Alignment.Center) {
-            val tb = thumb
-            if (tb != null) Image(tb.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            else Icon(Icons.Rounded.MusicNote, null, tint = if (now) Neon.Green else Neon.Dim)
-        }
-        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-            Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (now) Neon.Green else Color.White)
+        TrackThumb(pt, now, vm.isPlaying)
+        Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+            Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (now) Neon.Green else Color.White, fontWeight = FontWeight.Medium)
             Text("${t.artist} · ${t.album}", fontSize = 12.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
@@ -363,7 +360,7 @@ private fun CloudTrackRow(vm: PlayerViewModel, cloud: CloudManager, t: CloudTrac
         }
         Box {
             IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "Mais opções", tint = Neon.Dim) }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            GlassMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 if (pt != null) {
                     DropdownMenuItem(text = { Text("Tocar a seguir") }, onClick = { vm.playNext(pt); menu = false })
                     DropdownMenuItem(text = { Text("Adicionar à fila") }, onClick = { vm.addToQueue(pt); menu = false })
@@ -379,13 +376,13 @@ private fun CloudTrackRow(vm: PlayerViewModel, cloud: CloudManager, t: CloudTrac
 
 @Composable
 private fun AddToListDialog(vm: PlayerViewModel, t: CloudTrack, onClose: () -> Unit) {
-    AlertDialog(
+    GlassDialog(
         onDismissRequest = onClose,
         title = { Text("Adicionar à lista") },
         text = {
             Column {
                 vm.playlists.keys.sorted().forEach { n ->
-                    Text(n, Modifier.fillMaxWidth().clickable { vm.addToPlaylist(n, t.numericId); onClose() }.padding(12.dp))
+                    Text(n, Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { vm.addToPlaylist(n, t.numericId); onClose() }.padding(12.dp), color = Color.White)
                 }
             }
         },
@@ -397,7 +394,7 @@ private fun AddToListDialog(vm: PlayerViewModel, t: CloudTrack, onClose: () -> U
 private fun StorageCard(cloud: CloudManager) {
     var confirmClear by remember { mutableStateOf(false) }
     var confirmOffline by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().glass().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().glass(24.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Title("ARMAZENAMENTO NO APARELHO")
         Text("Cache de streaming: ${CloudLibrary.formatSize(cloud.cacheBytes)} · Capas: ${CloudLibrary.formatSize(cloud.coversBytes)}", fontSize = 13.sp)
         Text("Limite do cache de streaming", fontSize = 12.sp, color = Neon.Dim)
@@ -413,7 +410,7 @@ private fun StorageCard(cloud: CloudManager) {
         cloud.diagnostic?.let { Text(it, fontSize = 12.sp, color = Neon.Dim) }
     }
     if (confirmClear) {
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Limpar cache?") },
             text = { Text("Remove o áudio em cache e as capas. Os downloads offline são mantidos e as capas voltam a ser lidas aos poucos.") },
@@ -422,7 +419,7 @@ private fun StorageCard(cloud: CloudManager) {
         )
     }
     if (confirmOffline) {
-        AlertDialog(
+        GlassDialog(
             onDismissRequest = { confirmOffline = false },
             title = { Text("Remover downloads?") },
             text = { Text("As músicas baixadas serão apagadas do aparelho. Elas continuam no seu Drive.") },
