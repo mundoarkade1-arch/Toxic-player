@@ -39,6 +39,7 @@ import com.meuapp.player.cloud.SmartInfo
 import com.meuapp.player.cloud.SmartPlaylistManager
 import com.meuapp.player.taste.Candidate
 import com.meuapp.player.taste.ContextualPlaylistGenerator
+import com.meuapp.player.taste.DailyDiscoveryGate
 import com.meuapp.player.taste.ListeningHistoryStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -178,7 +179,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         AudioFx.init(app)
         loadPlaylists()
         try { connectivity?.registerDefaultNetworkCallback(netCallback) } catch (e: Exception) { /* sem monitor de rede: retomada só manual */ }
-        cloud.onIndexLoaded = { syncOrRestore(); refreshCurrent(); refreshQueue(); smart.reapplyStored(); cloud.maybeAutoSync() }
+        cloud.onIndexLoaded = { syncOrRestore(); refreshCurrent(); refreshQueue(); smart.reapplyStored(); runDailyDiscoveries(); cloud.maybeAutoSync() }
         cloud.onSynced = { smart.onLibrarySynced() }
         val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
         val future = MediaController.Builder(app, token).buildAsync()
@@ -548,6 +549,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val name = intent.trim()
         intentReport = ""
         if (name.isEmpty() || name == FAVORITES) return "Escreva um nome ou uma intenção para a playlist."
+        if (DailyDiscoveryGate.isDiscoveryName(name)) prefs.edit().putBoolean("disc_deleted", false).apply()
         val cands = ArrayList<Candidate>()
         val idByKey = HashMap<String, Long>()
         val genreByKey = HashMap<String, String>()
@@ -579,8 +581,25 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         return msg
     }
 
+    /**
+     * "Descobertas do dia": uma vez por dia, ACRESCENTA músicas novas na playlist. Nunca remove nada.
+     * Se o usuário apagar a playlist, ela não volta sozinha (só se ele criar de novo pelo nome).
+     */
+    private fun runDailyDiscoveries() {
+        try {
+            if (cloud.tracks.isEmpty()) return                      // biblioteca ainda vazia: tenta na próxima
+            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+            val last = prefs.getString("disc_last_day", null)
+            val deleted = prefs.getBoolean("disc_deleted", false)
+            if (!DailyDiscoveryGate.shouldRun(today, last, deleted)) return
+            createIntentPlaylist(DailyDiscoveryGate.NAME, 15)
+            prefs.edit().putString("disc_last_day", today).apply()
+        } catch (e: Exception) { /* descoberta é um extra: nunca pode atrapalhar a abertura do app */ }
+    }
+
     fun deletePlaylist(name: String) {
         if (name == FAVORITES) return
+        if (DailyDiscoveryGate.isDiscoveryName(name)) prefs.edit().putBoolean("disc_deleted", true).apply()
         smart.forget(name)
         playlists.remove(name); savePlaylists()
         if (openFolder == "P:$name") openFolder = null
