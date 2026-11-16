@@ -9,6 +9,7 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,10 +20,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meuapp.player.PlayerViewModel
 
-/** Ajustes: conta e sincronização do Drive, áudio (equalizador) e atualização do app. */
+/** Ajustes: conta e sincronização do Drive, áudio (equalizador), atualização do app e privacidade. */
 @Composable
 fun SettingsScreen(vm: PlayerViewModel) {
     var page by remember { mutableIntStateOf(0) }
+    var askClear by remember { mutableStateOf(false) }
+    var clearDone by remember { mutableStateOf(false) }
     BackHandler(enabled = page != 0) { page = 0 }
     if (page == 0) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -30,6 +33,7 @@ fun SettingsScreen(vm: PlayerViewModel) {
             SettingsRow(Icons.Rounded.Cloud, "Conta e sincronização", if (vm.cloud.connected) "Conectado: ${vm.cloud.accountEmail.ifBlank { "conta Google" }}" else "Conectar conta Google, sincronizar, cache e downloads", false) { page = 1 }
             SettingsRow(Icons.Rounded.Tune, "Áudio e equalizador", "Equalizador, dinâmica, efeitos e presets", false) { page = 2 }
             SettingsRow(Icons.Rounded.SystemUpdate, "Atualização do app", "Versão instalada e novas versões", vm.update != null) { page = 3 }
+            SettingsRow(Icons.Rounded.Lock, "Privacidade", "Apagar o que o app aprendeu sobre o que você ouve", false) { askClear = true }
         }
     } else {
         Column(Modifier.fillMaxSize()) {
@@ -45,6 +49,29 @@ fun SettingsScreen(vm: PlayerViewModel) {
                 }
             }
         }
+    }
+    if (askClear) {
+        GlassDialog(
+            onDismissRequest = { askClear = false },
+            title = { Text("Apagar o que o app aprendeu?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Isso apaga o histórico de escuta e o gosto aprendido, só neste aparelho. Suas playlists, suas favoritas e suas músicas não são apagadas. O app começa a aprender de novo do zero.", fontSize = 14.sp)
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.clearListeningHistory(); askClear = false; clearDone = true }) {
+                    Text("Apagar", color = Neon.Green, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = { TextButton(onClick = { askClear = false }) { Text("Cancelar") } }
+        )
+    }
+    if (clearDone) {
+        GlassDialog(
+            onDismissRequest = { clearDone = false },
+            title = { Text("Pronto", fontWeight = FontWeight.Bold) },
+            text = { Text("O histórico de escuta foi apagado.", fontSize = 14.sp) },
+            confirmButton = { TextButton(onClick = { clearDone = false }) { Text("Fechar", color = Neon.Green, fontWeight = FontWeight.Bold) } }
+        )
     }
 }
 

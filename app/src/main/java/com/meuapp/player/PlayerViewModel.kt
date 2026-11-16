@@ -597,6 +597,18 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: Exception) { /* descoberta é um extra: nunca pode atrapalhar a abertura do app */ }
     }
 
+    /**
+     * Privacidade: apaga o histórico de escuta e o gosto aprendido (só neste aparelho).
+     * NÃO mexe em playlists, favoritas nem músicas. As favoritas continuam valendo como gosto,
+     * porque o usuário as escolheu de propósito e elas continuam na lista.
+     */
+    fun clearListeningHistory() {
+        history.clear()
+        intentReport = ""
+        playlists[FAVORITES]?.forEach { id -> lookup(id)?.let { history.setFavorite(it, true) } }
+        history.flush()
+    }
+
     fun deletePlaylist(name: String) {
         if (name == FAVORITES) return
         if (DailyDiscoveryGate.isDiscoveryName(name)) prefs.edit().putBoolean("disc_deleted", true).apply()

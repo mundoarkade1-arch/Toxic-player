@@ -41,8 +41,9 @@ class ListeningHistoryStore(ctx: Context) {
         schedule()
     }
 
-    /** Apaga todo o histórico (para uma futura opção de privacidade na tela). */
+    /** Apaga todo o histórico (usado pela opção Privacidade, em Ajustes). */
     fun clear() {
+        handler.removeCallbacks(flushTask); scheduled = false
         history = ListeningHistory()
         prefs.edit().remove("json").apply()
     }
