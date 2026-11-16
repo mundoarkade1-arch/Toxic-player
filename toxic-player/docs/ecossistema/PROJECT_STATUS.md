@@ -11,8 +11,10 @@ Atualizado: 2026-11-15 (agente 1, auditoria). Legenda: [E] existe no código · 
 - [E, não compilado] Perfil de gosto: `taste/UserTasteProfile.kt` (afinidade por artista e gênero, escuta recente pesa mais, meia-vida 60 dias, `explain()` em português simples). `ListeningHistoryStore.profile(genreOf)` entrega o perfil. Sem tela ainda.
 - [E, não compilado] Motor de recomendação: `taste/MusicRecommendationEngine.kt` (gosto por artista e gênero, histórico recente/favorita/pulos, novidade, boost de contexto, 20% de descoberta, limite por artista, sem duplicata, sem mesmo artista seguido). Cada sugestão traz o motivo em português simples. Sem popularidade (não há dado). Sem tela.
 - [E, não compilado] Gerador por intenção: `taste/ContextualPlaylistGenerator.kt`. Entende palavras como viajar, noite, relaxar, treinar, trabalhar, animadas, românticas, nostalgia, descobertas, e também o nome de um artista ou gênero da biblioteca. Tabela de palavras é palpite simples; só ajuda músicas com gênero nas tags.
-- [E, não compilado] `PlayerViewModel.createIntentPlaylist(intent)`: cria ou completa a playlist. Só acrescenta, nunca remove, nunca repete. Motivos em `intentReport`. SEM TELA: ninguém chama essa função ainda.
-- [P] Tela para o usuário criar a playlist por intenção; playlist "Descobertas do dia" automática; ligação com playlists do site (SmartPlaylistManager).
+- [E, não compilado] `PlayerViewModel.createIntentPlaylist(intent)`: cria ou completa a playlist. Só acrescenta, nunca remove, nunca repete. Motivos em `intentReport`. Motivos em `intentReport` (limpo a cada chamada).
+- [E, não compilado] Tela: aba Biblioteca > Listas, botão "Criar por intenção (inteligente)" em `ui/PlaylistsScreen.kt`. Abre uma janela com um campo, monta a playlist e mostra o resultado com o motivo de cada música. NÃO testada no aparelho.
+- Gerador por intenção: Actions VERDE (usuário confirmou).
+- [P] Playlist "Descobertas do dia" automática; ligação com playlists do site (SmartPlaylistManager).
 - Motor de recomendação: Actions VERDE (usuário confirmou).
 - Perfil de gosto: Actions VERDE (usuário confirmou).
 - Build do histórico de escuta: Actions VERDE (usuário confirmou).

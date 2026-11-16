@@ -546,6 +546,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun createIntentPlaylist(intent: String, limit: Int = 30): String {
         val name = intent.trim()
+        intentReport = ""
         if (name.isEmpty() || name == FAVORITES) return "Escreva um nome ou uma intenção para a playlist."
         val cands = ArrayList<Candidate>()
         val idByKey = HashMap<String, Long>()
@@ -575,7 +576,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             val c = byKey[r.key]; "${c?.artist ?: ""} - ${c?.title ?: ""}: ${r.reason}"
         }
         val msg = (if (existing.isEmpty()) "Playlist criada" else "Playlist atualizada") + ": ${newIds.size} músicas novas. " + gen.note
-        smartInfo = SmartInfo(msg)
         return msg
     }
 

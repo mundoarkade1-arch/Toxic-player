@@ -27,3 +27,7 @@
 - Modificado: `PlayerViewModel.kt` (imports, `generator`, `intentReport`, `createIntentPlaylist`).
 - Boosts: gênero da intenção +0,5; artista citado +0,6 (sem limite de 3 por artista); nostalgia +0,4 para completas ouvidas há mais de 30 dias; descoberta sobe a parte de artistas novos para 60%.
 - Limite: músicas sem gênero nas tags não recebem boost de estilo. Músicas locais não têm gênero.
+
+## 2026-11-15 — Agente 1 (etapa 5: tela da playlist por intenção)
+- Modificados: `ui/PlaylistsScreen.kt` (botão, janela de texto, janela de resultado), `PlayerViewModel.kt` (limpa `intentReport` no início; removido o aviso verde do Drive para não aparecer com o título errado).
+- Autorização: usuário respondeu "prossiga" à pergunta sobre a tela.

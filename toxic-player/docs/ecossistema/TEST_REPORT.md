@@ -13,4 +13,7 @@ UserTasteProfileTest (9 testes): Actions VERDE segundo o usuário.
 MusicRecommendationEngineTest (10 testes): Actions VERDE segundo o usuário.
 
 ## Etapa gerador por intenção
-ContextualPlaylistGeneratorTest (10 testes) escrito. NÃO compilado aqui. `createIntentPlaylist` no ViewModel sem teste (depende de Android).
+ContextualPlaylistGeneratorTest (10 testes): Actions VERDE segundo o usuário.
+
+## Etapa tela de playlist por intenção
+Sem teste automático (interface). Escrita, NÃO compilada aqui, NÃO testada no aparelho. Teste manual sugerido: histórico vazio (deve montar pela biblioteca), escrever "Treinar", escrever "Treinar" de novo (não pode repetir música nem apagar), nome de artista. `createIntentPlaylist` no ViewModel sem teste (depende de Android).

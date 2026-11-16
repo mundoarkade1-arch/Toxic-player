@@ -17,8 +17,8 @@ Sem backend. Drive é a ponte. Contrato JSON real `toxic-playlists` v2 (ARCHITEC
 2. FEITO (não compilado): histórico de escuta em `taste/`. Confirmar com o usuário que o Actions ficou verde (testes `ListeningHistoryTest`). Se vermelho, corrigir antes de seguir. Falta só uma tela/botão de privacidade para limpar (`history.clear()`).
 3. FEITO (aguarda Actions): `UserTasteProfile` (pesos por artista, pasta e gênero das tags; pular só reduz peso leve).
 4. FEITO (aguarda Actions): `MusicRecommendationEngine` (só lógica).
-5. FEITO (aguarda Actions): `ContextualPlaylistGenerator` (nome ou intenção do usuário, como "dirigindo à noite", vira boost de gênero/palavra para o motor) e playlist "Descobertas do dia" gravada pelo caminho do SmartPlaylistManager (`commit`), sem remover faixa manual e sem duplicata. Depois, com autorização do usuário, uma tela simples. Candidatos vêm de `cloud.tracks` (chave "c:<id>", gênero em `CloudTrack.genre`); histórico em `vm.history.entriesByKey()`; perfil em `vm.history.profile(...)`.
-6. AGORA, com autorização do usuário: tela simples (campo de nome + botão) chamando `vm.createIntentPlaylist(texto)` e mostrando `vm.intentReport`; olhar `ui/PlaylistsScreen.kt` primeiro e pedir o arquivo inteiro se for grande. Depois: "Descobertas do dia" (só acrescentar), e levar sinais do histórico para o site (opcional).
+5. FEITO (Actions verde): `ContextualPlaylistGenerator` (nome ou intenção do usuário, como "dirigindo à noite", vira boost de gênero/palavra para o motor) e playlist "Descobertas do dia" gravada pelo caminho do SmartPlaylistManager (`commit`), sem remover faixa manual e sem duplicata. Depois, com autorização do usuário, uma tela simples. Candidatos vêm de `cloud.tracks` (chave "c:<id>", gênero em `CloudTrack.genre`); histórico em `vm.history.entriesByKey()`; perfil em `vm.history.profile(...)`.
+6. FEITO (aguarda Actions e teste no aparelho): tela em `ui/PlaylistsScreen.kt`. Pedir ao usuário que teste no celular e relate. Depois: "Descobertas do dia" (só acrescentar), e levar sinais do histórico para o site (opcional).
 7. Atualizar os 6 documentos. Gerar novo NEXT_AGENT_PROMPT.
 
 ## Cuidados
