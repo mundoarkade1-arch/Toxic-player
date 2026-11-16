@@ -1,6 +1,6 @@
 # CONTRATO_MOTOR — como o Toxic Music Engine conversa com o resto
 
-Estado: PROPOSTA (etapa 1). Nada disto está implementado ainda. Legenda: [E] existe hoje · [P] planejado.
+Estado: PROPOSTA, atualizada em 2026-11-16 (etapa 3). O motor já escreve estes arquivos em código, mas só testado com Drive de mentira. Legenda: [E] existe hoje · [P] planejado.
 
 ## Regras de ouro
 1. Sem servidor. O Google Drive é a ponte entre motor, site e app. [E para site e app, P para o motor]
@@ -14,10 +14,10 @@ Estado: PROPOSTA (etapa 1). Nada disto está implementado ainda. Legenda: [E] ex
 | Pasta | Dono | Situação |
 |---|---|---|
 | `Músicas do Site` (nome definido em `PASTA_RAIZ` no app.js do site) | site | [E] |
-| `Toxic Playlists` | site (`playlists-inteligentes.json`) e motor (`playlists-motor.json`) | site [E], motor [P] |
-| `Toxic Engine` (nova, na raiz do Drive) | motor | [P] |
+| `Toxic Playlists` | site (`playlists-inteligentes.json`) | [E] |
+| `Toxic Engine` (nova, na raiz do Drive) | motor (status, fila, pendentes E `playlists-motor.json`) | [P] código escrito |
 
-O app lê hoje SÓ o arquivo `playlists-inteligentes.json` (`CloudConfig.PLAYLISTS_FILE`). O motor NÃO deve escrever esse nome, porque o site já escreve nele e um sobrescreveria o outro. O motor escreve `playlists-motor.json`, no mesmo formato. O app precisará ler os dois (etapa 5, mexe em `DriveApi.findPlaylistsFile` e `SmartPlaylistManager`).
+O app lê hoje SÓ o arquivo `playlists-inteligentes.json` (`CloudConfig.PLAYLISTS_FILE`). O motor NÃO escreve esse nome, porque o site já escreve nele e um sobrescreveria o outro. O motor escreve `playlists-motor.json`, no mesmo formato, na pasta `Toxic Engine` (e não em `Toxic Playlists`: com o escopo `drive.file` o motor só consegue escrever em pastas que ele mesmo criou). O app precisará procurar os dois nomes, em qualquer pasta do Drive (etapa 5, mexe em `CloudConfig`, `DriveApi.findPlaylistsFile` e `SmartPlaylistManager`).
 
 ## Arquivos da pasta `Toxic Engine` (dono: motor)
 
@@ -51,7 +51,7 @@ Músicas que o usuário ainda NÃO tem. O motor só lista. Não baixa nada.
 ```
 `chave` = artista e título normalizados (tudo minúsculo, sem acento, sem pontuação, sem "feat"/"with", separados por `|`). É a mesma ideia do 3º critério de casamento do app, para os dois concordarem.
 
-## Arquivo na pasta `Toxic Playlists` (dono: motor)
+## Arquivo de playlists (dono: motor, também na pasta `Toxic Engine`)
 
 ### playlists-motor.json
 Formato idêntico a `toxic-playlists` v2 (ver ARCHITECTURE.md). Playlists por artista, discografia, gênero e época. Só entram faixas que o motor confirmou que existem na biblioteca. Campo extra opcional `origem: "Motor"`.
@@ -69,10 +69,11 @@ Lê o Drive pela API (nomes, pastas e tags), do mesmo jeito que o app. Não cria
 
 ## Segurança
 - Credenciais do Google ficam só no PC do usuário, fora do repositório (`.gitignore`).
-- O usuário configura o acesso do motor ao Google uma vez, com ajuda passo a passo (etapa 3). Isso é um cliente OAuth tipo "Aplicativo para computador", no MESMO projeto Google do site. Gratuito.
+- O usuário configura o acesso do motor ao Google uma vez, com ajuda passo a passo (etapa 3). Isso é um cliente OAuth tipo "Aplicativo para computador", no MESMO projeto Google do site. Gratuito. O token de renovação fica em arquivo só no PC do usuário (fora do GitHub). Com a tela de consentimento em modo "Teste", o Google costuma cancelá-lo em 7 dias e o usuário entra de novo.
 - O motor respeita as cotas das APIs (Deezer, Drive) e para quando o limite chega.
 
 ## Decisões em aberto
 1. Site e motor não se falam direto: a regra de segurança do site (`index.html`, `connect-src`) só permite os servidores do Google. Por isso tudo passa pelo Drive. Se um dia quisermos o site chamando o PC, essa regra terá de mudar e ficará registrada aqui.
 2. Onde ficam os arquivos de música baixados pelo usuário e como o motor sobe ao Drive: depende de analisar o Media Downloader (etapa 6, ainda sem arquivos).
-3. Tecnologia do motor: proposta é Node.js 20 (a mesma do `scripts/atualizar.mjs`). Falta o usuário confirmar que aceita instalar.
+3. Tecnologia do motor: Node.js 20 (a mesma do `scripts/atualizar.mjs`). Falta o usuário confirmar que aceita instalar. O motor tem atalhos `.bat` para ele não usar terminal.
+4. Escopos do Google: `drive.readonly` + `drive.file`. Mesmos do site.
