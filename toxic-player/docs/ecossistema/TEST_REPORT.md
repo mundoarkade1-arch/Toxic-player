@@ -10,4 +10,7 @@ ListeningHistoryTest (14 testes): Actions VERDE segundo o usuário (build.yml ro
 UserTasteProfileTest (9 testes): Actions VERDE segundo o usuário.
 
 ## Etapa motor de recomendação
-MusicRecommendationEngineTest (10 testes) escrito. NÃO compilado aqui. Aguardando Actions.
+MusicRecommendationEngineTest (10 testes): Actions VERDE segundo o usuário.
+
+## Etapa gerador por intenção
+ContextualPlaylistGeneratorTest (10 testes) escrito. NÃO compilado aqui. `createIntentPlaylist` no ViewModel sem teste (depende de Android).

@@ -21,3 +21,9 @@
 - Pesos: 0,55 artista + 0,30 gênero + contexto; tocada há menos de 6 h -0,5, menos de 24 h -0,25; 3+ pulos e nenhuma completa -0,3; favorita +0,15; nunca tocada +0,05; chegou há menos de 14 dias +0,1.
 - Descoberta: artista que o usuário nunca ouviu, no gênero que ele gosta. Reserva 20% da lista. Perfil vazio = sem descoberta.
 - Limite: se a biblioteca tiver poucos artistas, a lista pode vir menor que o pedido (limite por artista).
+
+## 2026-11-15 — Agente 1 (etapa 4: gerador por intenção)
+- Criados: `taste/ContextualPlaylistGenerator.kt`, teste `taste/ContextualPlaylistGeneratorTest.kt`.
+- Modificado: `PlayerViewModel.kt` (imports, `generator`, `intentReport`, `createIntentPlaylist`).
+- Boosts: gênero da intenção +0,5; artista citado +0,6 (sem limite de 3 por artista); nostalgia +0,4 para completas ouvidas há mais de 30 dias; descoberta sobe a parte de artistas novos para 60%.
+- Limite: músicas sem gênero nas tags não recebem boost de estilo. Músicas locais não têm gênero.
