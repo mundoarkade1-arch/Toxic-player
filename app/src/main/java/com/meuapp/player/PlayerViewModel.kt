@@ -37,6 +37,9 @@ import com.meuapp.player.cloud.CloudPlayback
 import com.meuapp.player.cloud.DriveApi
 import com.meuapp.player.cloud.SmartInfo
 import com.meuapp.player.cloud.SmartPlaylistManager
+import com.meuapp.player.taste.Candidate
+import com.meuapp.player.taste.ContextualPlaylistGenerator
+import com.meuapp.player.taste.ListeningHistoryStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -93,6 +96,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         commit = { changed -> changed.forEach { (k, v) -> playlists[k] = v }; savePlaylists() },
         notify = { smartInfo = it }
     )
+    // Histórico de escuta (só no aparelho). Alimenta, nas próximas etapas, o perfil de gosto e as recomendações.
+    val history = ListeningHistoryStore(app)
+    private val generator = ContextualPlaylistGenerator()
+    /** Por que cada música foi sugerida na última playlist por intenção (uma linha por música). Para uma tela futura. */
+    var intentReport by mutableStateOf(""); private set
     private var localLoaded = false
     @Volatile private var pendingRetry = false      // erro de rede/sessão: retomar quando possível
     private var tokenRetried = false
@@ -182,6 +190,20 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     isPlaying = playing
                     if (playing) { playError = null; pendingRetry = false; tokenRetried = false }
                     if (!playing) savePos()
+                }
+                override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                    // Histórico: só quando a faixa mudou ou repetiu sozinha. Remoção de fila e ajustes internos não contam.
+                    if (reason == Player.DISCONTINUITY_REASON_REMOVE || reason == Player.DISCONTINUITY_REASON_INTERNAL) return
+                    val oldId = oldPosition.mediaItem?.mediaId ?: return
+                    val sameItem = newPosition.mediaItem?.mediaId == oldId
+                    val natural = reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION
+                    if (sameItem && !natural) return          // pulou dentro da mesma música (seek): não conta
+                    val t = oldId.toLongOrNull()?.let { lookup(it) } ?: return
+                    history.onTrackLeft(t, oldPosition.positionMs, natural, natural && sameItem)
+                }
+                override fun onPlaybackStateChanged(state: Int) {
+                    // Última música da fila terminou: não há troca de faixa, então registra aqui.
+                    if (state == Player.STATE_ENDED) currentTrack?.let { history.onTrackLeft(it, it.durationMs, true, false) }
                 }
                 override fun onMediaMetadataChanged(m: MediaMetadata) {
                     title = m.title?.toString() ?: "Faixa"
@@ -482,7 +504,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleFav(id: Long) {
         val l = playlists[FAVORITES] ?: emptyList()
-        playlists[FAVORITES] = if (id in l) l - id else l + id
+        val novaLista = if (id in l) l - id else l + id
+        playlists[FAVORITES] = novaLista
+        lookup(id)?.let { history.setFavorite(it, id in novaLista) }
         savePlaylists()
     }
 
@@ -514,6 +538,45 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun syncSmartPlaylistsNow() {
         if (!cloud.connected) { smartInfo = SmartInfo("Conecte sua conta na aba Cloud primeiro."); return }
         smart.syncFromDrive(manual = true)
+    }
+
+    /**
+     * Cria (ou completa) uma playlist a partir do nome/intenção. SÓ ACRESCENTA: nunca remove música nem repete.
+     * Devolve uma frase simples para mostrar. Os motivos ficam em [intentReport].
+     */
+    fun createIntentPlaylist(intent: String, limit: Int = 30): String {
+        val name = intent.trim()
+        intentReport = ""
+        if (name.isEmpty() || name == FAVORITES) return "Escreva um nome ou uma intenção para a playlist."
+        val cands = ArrayList<Candidate>()
+        val idByKey = HashMap<String, Long>()
+        val genreByKey = HashMap<String, String>()
+        for (c in cloud.tracks) {
+            val k = "c:${c.id}"
+            cands.add(Candidate(k, c.title, c.artist, c.genre, c.addedMs)); idByKey[k] = c.numericId; genreByKey[k] = c.genre
+        }
+        for (t in tracks) {
+            if (t.cloudId != null) continue
+            val k = "l:${t.id}"
+            cands.add(Candidate(k, t.title, t.artist, "", 0L)); idByKey[k] = t.id
+        }
+        if (cands.isEmpty()) return "Ainda não tenho músicas na biblioteca. Sincronize o Drive primeiro."
+        val existing = playlists[name] ?: emptyList()
+        val keyById = idByKey.entries.associate { it.value to it.key }
+        val exclude = existing.mapNotNull { keyById[it] }.toSet()
+        val now = System.currentTimeMillis()
+        val profile = history.profile({ genreByKey[it] ?: "" }, now)
+        val gen = generator.generate(name, cands, profile, history.entriesByKey(), now, limit, exclude)
+        val newIds = gen.items.mapNotNull { idByKey[it.key] }.filter { it !in existing }.distinct()
+        if (newIds.isEmpty()) return "Não achei músicas novas para essa playlist."
+        playlists[name] = existing + newIds
+        savePlaylists()
+        val byKey = cands.associateBy { it.key }
+        intentReport = gen.items.joinToString("\n") { r ->
+            val c = byKey[r.key]; "${c?.artist ?: ""} - ${c?.title ?: ""}: ${r.reason}"
+        }
+        val msg = (if (existing.isEmpty()) "Playlist criada" else "Playlist atualizada") + ": ${newIds.size} músicas novas. " + gen.note
+        return msg
     }
 
     fun deletePlaylist(name: String) {

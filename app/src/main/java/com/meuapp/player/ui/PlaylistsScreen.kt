@@ -96,6 +96,9 @@ private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit) {
     var open by remember { mutableStateOf<String?>(null) }
     var newDialog by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
+    var intentDialog by remember { mutableStateOf(false) }
+    var intentText by remember { mutableStateOf("") }
+    var intentResult by remember { mutableStateOf<String?>(null) }
     val jsonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             val text = withContext(Dispatchers.IO) { com.meuapp.player.SafeRead.readText(ctx, uri, 8 * 1024 * 1024) }
@@ -120,6 +123,7 @@ private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit) {
             }
         }
         item { GhostButton("Importar playlists (.json)", Modifier.fillMaxWidth()) { jsonPicker.launch(arrayOf("application/json", "text/plain", "*/*")) } }
+        item { GhostButton("Criar por intenção (inteligente)", Modifier.fillMaxWidth()) { intentDialog = true } }
         if (groups.isEmpty()) item { EmptyState(Icons.Rounded.QueueMusic, "Nenhuma playlist ainda.") }
         items(groups.chunked(2)) { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -142,6 +146,41 @@ private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit) {
             text = { OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true, label = { Text("Nome da playlist") }) },
             confirmButton = { TextButton(onClick = { vm.createPlaylist(newName); newName = ""; newDialog = false }) { Text("Criar", color = Neon.Green, fontWeight = FontWeight.Bold) } },
             dismissButton = { TextButton(onClick = { newDialog = false }) { Text("Cancelar") } }
+        )
+    }
+    if (intentDialog) {
+        GlassDialog(
+            onDismissRequest = { intentDialog = false },
+            title = { Text("Playlist inteligente", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("O que você escrever vira o nome da playlist. O app escolhe as músicas pelo seu gosto.", fontSize = 13.sp, color = Neon.Dim)
+                    OutlinedTextField(value = intentText, onValueChange = { intentText = it }, singleLine = true, label = { Text("Para que é a playlist?") })
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { intentResult = vm.createIntentPlaylist(intentText); intentText = ""; intentDialog = false }) {
+                    Text("Montar", color = Neon.Green, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = { TextButton(onClick = { intentDialog = false }) { Text("Cancelar") } }
+        )
+    }
+    val resultMsg = intentResult
+    if (resultMsg != null) {
+        GlassDialog(
+            onDismissRequest = { intentResult = null },
+            title = { Text("Pronto", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(resultMsg, fontSize = 15.sp)
+                    if (vm.intentReport.isNotBlank()) {
+                        Text("Por que cada música:", fontSize = 12.sp, color = Neon.Dim)
+                        Text(vm.intentReport, fontSize = 12.sp, color = Neon.Dim)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { intentResult = null }) { Text("Fechar", color = Neon.Green, fontWeight = FontWeight.Bold) } }
         )
     }
 }
