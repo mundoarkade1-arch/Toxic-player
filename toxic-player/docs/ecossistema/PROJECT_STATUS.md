@@ -9,7 +9,9 @@ Atualizado: 2026-11-15 (agente 1, auditoria). Legenda: [E] existe no código · 
 - [E] Navegação estilo Spotify (Início, Buscar, Biblioteca, No aparelho, Ajustes).
 - [E, não compilado] Histórico de escuta (etapa 2 do agente 2): `taste/ListeningHistory.kt` (lógica pura), `taste/ListeningHistoryStore.kt` (grava no aparelho), ligado em `PlayerViewModel.kt` (troca de faixa, fim da fila, favoritar). Sem tela. Dados só no aparelho.
 - [E, não compilado] Perfil de gosto: `taste/UserTasteProfile.kt` (afinidade por artista e gênero, escuta recente pesa mais, meia-vida 60 dias, `explain()` em português simples). `ListeningHistoryStore.profile(genreOf)` entrega o perfil. Sem tela ainda.
-- [P] Motor de recomendação (MusicRecommendationEngine) e gerador de playlist: ainda NÃO existem.
+- [E, não compilado] Motor de recomendação: `taste/MusicRecommendationEngine.kt` (gosto por artista e gênero, histórico recente/favorita/pulos, novidade, boost de contexto, 20% de descoberta, limite por artista, sem duplicata, sem mesmo artista seguido). Cada sugestão traz o motivo em português simples. Sem popularidade (não há dado). Sem tela.
+- [P] Gerador de playlist por intenção (ContextualPlaylistGenerator) e ligação com SmartPlaylistManager e telas: ainda NÃO existem.
+- Perfil de gosto: Actions VERDE (usuário confirmou).
 - Build do histórico de escuta: Actions VERDE (usuário confirmou).
 - Estado de build: PROJECT_STATE.md diz que nada foi compilado. Só leitura do Drive (35 playlists, +590 faixas) foi validada no aparelho. [?] build atual no Actions.
 - Problema de organização: pasta antiga repetida `Toxic-player-main/Toxic-player-main/` e arquivos `.kt` soltos na raiz (README manda não ter). Não mexi.

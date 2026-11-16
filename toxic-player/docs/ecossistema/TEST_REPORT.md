@@ -7,4 +7,7 @@ Site: não executado.
 ListeningHistoryTest (14 testes): Actions VERDE segundo o usuário (build.yml roda testes; conferir no log se `testDebugUnitTest` aparece).
 
 ## Etapa perfil de gosto
-UserTasteProfileTest (9 testes) escrito. NÃO compilado aqui. Aguardando Actions.
+UserTasteProfileTest (9 testes): Actions VERDE segundo o usuário.
+
+## Etapa motor de recomendação
+MusicRecommendationEngineTest (10 testes) escrito. NÃO compilado aqui. Aguardando Actions.

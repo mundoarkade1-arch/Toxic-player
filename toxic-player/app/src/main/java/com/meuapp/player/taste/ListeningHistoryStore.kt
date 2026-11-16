@@ -19,6 +19,9 @@ class ListeningHistoryStore(ctx: Context) {
     val total: Int get() = history.size
     fun topArtists(limit: Int) = history.topArtists(limit)
 
+    /** Todas as entradas do histórico, por chave (para o motor de recomendação). */
+    fun entriesByKey(): Map<String, HistoryEntry> = history.entries().associateBy { it.key }
+
     /** Perfil de gosto recalculado do histórico. [genreOf] recebe a chave da música ("c:<idDoDrive>") e devolve o gênero. */
     fun profile(genreOf: (String) -> String, now: Long = System.currentTimeMillis()): UserTasteProfile =
         UserTasteProfile.build(history.entries(), genreOf, now)

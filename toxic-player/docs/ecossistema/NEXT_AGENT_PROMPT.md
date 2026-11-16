@@ -16,8 +16,9 @@ Sem backend. Drive é a ponte. Contrato JSON real `toxic-playlists` v2 (ARCHITEC
 1. Pedir ao usuário o resultado do build no GitHub Actions do app (verde ou vermelho). Se vermelho, corrigir erros primeiro.
 2. FEITO (não compilado): histórico de escuta em `taste/`. Confirmar com o usuário que o Actions ficou verde (testes `ListeningHistoryTest`). Se vermelho, corrigir antes de seguir. Falta só uma tela/botão de privacidade para limpar (`history.clear()`).
 3. FEITO (aguarda Actions): `UserTasteProfile` (pesos por artista, pasta e gênero das tags; pular só reduz peso leve).
-4. Agora: `MusicRecommendationEngine` e playlist "Descobertas do dia" via SmartPlaylistManager, sem remover faixa manual e sem duplicata.
-5. Atualizar os 6 documentos. Gerar novo NEXT_AGENT_PROMPT.
+4. FEITO (aguarda Actions): `MusicRecommendationEngine` (só lógica).
+5. AGORA: `ContextualPlaylistGenerator` (nome ou intenção do usuário, como "dirigindo à noite", vira boost de gênero/palavra para o motor) e playlist "Descobertas do dia" gravada pelo caminho do SmartPlaylistManager (`commit`), sem remover faixa manual e sem duplicata. Depois, com autorização do usuário, uma tela simples. Candidatos vêm de `cloud.tracks` (chave "c:<id>", gênero em `CloudTrack.genre`); histórico em `vm.history.entriesByKey()`; perfil em `vm.history.profile(...)`.
+6. Atualizar os 6 documentos. Gerar novo NEXT_AGENT_PROMPT.
 
 ## Cuidados
 Não tocar na pasta repetida `Toxic-player-main/Toxic-player-main/` sem avisar. Não adicionar escopo Drive maior (AGENTS.md). Nunca token no disco. Não declarar testado sem rodar. Diferenciar escrito, compilado, instalado, testado, validado.

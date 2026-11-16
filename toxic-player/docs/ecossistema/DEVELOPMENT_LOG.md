@@ -14,3 +14,10 @@
 - Criados: `taste/UserTasteProfile.kt`, teste `taste/UserTasteProfileTest.kt`.
 - Modificado: `taste/ListeningHistoryStore.kt` (função `profile`). Nada ligado a tela ainda.
 - Regras: pulo-só não cria gosto; artista desconhecido não conta; nomes comparados sem acento e sem maiúscula; afinidade 0 a 1 pelo maior.
+
+## 2026-11-15 — Agente 1 (etapa 3: motor de recomendação)
+- Criados: `taste/MusicRecommendationEngine.kt`, teste `taste/MusicRecommendationEngineTest.kt`.
+- Modificado: `taste/ListeningHistoryStore.kt` (função `entriesByKey`).
+- Pesos: 0,55 artista + 0,30 gênero + contexto; tocada há menos de 6 h -0,5, menos de 24 h -0,25; 3+ pulos e nenhuma completa -0,3; favorita +0,15; nunca tocada +0,05; chegou há menos de 14 dias +0,1.
+- Descoberta: artista que o usuário nunca ouviu, no gênero que ele gosta. Reserva 20% da lista. Perfil vazio = sem descoberta.
+- Limite: se a biblioteca tiver poucos artistas, a lista pode vir menor que o pedido (limite por artista).
