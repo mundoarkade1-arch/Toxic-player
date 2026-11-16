@@ -43,3 +43,8 @@ Atualizado: 2026-11-15 (agente 1, auditoria). Legenda: [E] existe no código · 
 1. Toxic Player primeiro: confirmar build; depois histórico + perfil + recomendação local. Motivo: o site já gera o JSON que o app já lê. A peça que falta é no app.
 2. Site depois: exportar lista de pendentes (artista, título, link) para o Media Downloader.
 3. Integração e teste completo.
+
+## Estado de verificação (fim da sessão do agente 1)
+- Actions verde confirmado pelo usuário: histórico, perfil, motor, gerador.
+- Etapa 5 (tela + ViewModel): entregue, Actions NÃO confirmado.
+- Nada testado no aparelho.
