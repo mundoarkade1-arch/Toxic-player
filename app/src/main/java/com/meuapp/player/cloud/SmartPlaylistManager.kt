@@ -11,7 +11,8 @@ import kotlinx.coroutines.withContext
 data class SmartInfo(val text: String, val report: String = "")
 
 /**
- * Liga o arquivo "playlists-inteligentes.json" do Drive às playlists do app. SEM TELA: só lógica.
+ * Liga os arquivos "playlists-inteligentes.json" (site) e "playlists-motor.json" (motor do PC) do Drive às playlists do app.
+ * Os dois são juntados por [SmartMerge] num arquivo só. SEM TELA: só lógica.
  * Todas as funções públicas devem ser chamadas na thread principal (as playlists do app são estado do Compose).
  * O app só LÊ o Drive. Nada aqui apaga ou escreve no Drive.
  *
@@ -157,18 +158,39 @@ class SmartPlaylistManager(
             var loud = false        // erro que vale avisar mesmo no modo automático
             try {
                 val meta = api.findPlaylistsFile()
-                if (meta == null) {
+                // O arquivo do motor é opcional: se der erro ao procurar, segue só com o do site.
+                val motorMeta = try { api.findMotorPlaylistsFile() } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+                val stamp = "${meta?.modifiedTime.orEmpty()}|${motorMeta?.modifiedTime.orEmpty()}"
+                if (meta == null && motorMeta == null) {
                     problem = "Não achei o arquivo de playlists no Drive (pasta ${CloudConfig.PLAYLISTS_FOLDER}). Abra o site e toque em Atualizar tudo."
-                } else if (!manual && meta.modifiedTime.isNotEmpty() && meta.modifiedTime == prefs.getString("modified", "")) {
-                    // Arquivo igual ao que já foi lido: não baixa de novo.
+                } else if (!manual && stamp != "|" && stamp == prefs.getString("modified", "")) {
+                    // Arquivos iguais aos que já foram lidos: não baixa de novo.
                 } else {
-                    modified = meta.modifiedTime
-                    when (val p = SmartPlaylistJson.parse(api.readTextFile(meta.id))) {
-                        is SmartParse.Ok -> parsed = p
-                        is SmartParse.Invalid -> {
-                            problem = "O arquivo de playlists no Drive está com problema. Abra o site e toque em Atualizar tudo de novo."
-                            loud = true
+                    modified = stamp
+                    var site: SmartFile? = null
+                    var siteBad = false
+                    if (meta != null) {
+                        when (val p = SmartPlaylistJson.parse(api.readTextFile(meta.id))) {
+                            is SmartParse.Ok -> site = p.file
+                            is SmartParse.Invalid -> siteBad = true
                         }
+                    }
+                    var motor: SmartFile? = null
+                    if (motorMeta != null) {
+                        try {
+                            val pm = SmartPlaylistJson.parse(api.readTextFile(motorMeta.id))
+                            if (pm is SmartParse.Ok) motor = pm.file
+                            else modified = ""      // arquivo do motor com problema: tenta de novo na próxima vez
+                        } catch (e: CancellationException) { throw e
+                        } catch (e: Exception) { modified = "" }
+                    }
+                    if (siteBad) {
+                        problem = "O arquivo de playlists no Drive está com problema. Abra o site e toque em Atualizar tudo de novo."
+                        loud = true
+                    } else {
+                        val merged = SmartMerge.merge(site, motor)
+                        if (merged != null) parsed = SmartParse.Ok(merged, 0)
+                        else problem = "O arquivo de playlists do motor está com problema. Rode o motor no PC de novo."
                     }
                 }
             } catch (e: CancellationException) { fetching = false; throw e

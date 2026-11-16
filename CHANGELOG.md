@@ -1,6 +1,8 @@
 # Changelog
 
 ## Não lançado
+### Adicionado (playlists do motor)
+- O app lê também o `playlists-motor.json` (gerado pelo Toxic Music Engine, procurado em qualquer pasta do Drive) e junta com o `playlists-inteligentes.json` do site (`SmartMerge`). Nunca remove faixas escolhidas à mão e não recria playlist apagada pelo usuário. Testes em `SmartMergeTest`. Código escrito e testes unitários criados; ainda não validado no celular.
 ### Adicionado (velocidade)
 - Pré-carregamento: com a música atual já bem à frente no buffer, o app guarda no cache o começo (1 MB) das 2 próximas músicas da nuvem, em segundo plano e com prioridade mínima; funciona em 3G sem atrapalhar a música tocando. Cache de capas proporcional à memória do aparelho.
 ### Alterado (navegação)

@@ -17,7 +17,7 @@ Estado: PROPOSTA, atualizada em 2026-11-16 (etapa 3). O motor já escreve estes 
 | `Toxic Playlists` | site (`playlists-inteligentes.json`) | [E] |
 | `Toxic Engine` (nova, na raiz do Drive) | motor (status, fila, pendentes E `playlists-motor.json`) | [P] código escrito |
 
-O app lê hoje SÓ o arquivo `playlists-inteligentes.json` (`CloudConfig.PLAYLISTS_FILE`). O motor NÃO escreve esse nome, porque o site já escreve nele e um sobrescreveria o outro. O motor escreve `playlists-motor.json`, no mesmo formato, na pasta `Toxic Engine` (e não em `Toxic Playlists`: com o escopo `drive.file` o motor só consegue escrever em pastas que ele mesmo criou). O app precisará procurar os dois nomes, em qualquer pasta do Drive (etapa 5, mexe em `CloudConfig`, `DriveApi.findPlaylistsFile` e `SmartPlaylistManager`).
+O app lê hoje SÓ o arquivo `playlists-inteligentes.json` (`CloudConfig.PLAYLISTS_FILE`). O motor NÃO escreve esse nome, porque o site já escreve nele e um sobrescreveria o outro. O motor escreve `playlists-motor.json`, no mesmo formato, na pasta `Toxic Engine` (e não em `Toxic Playlists`: com o escopo `drive.file` o motor só consegue escrever em pastas que ele mesmo criou). O app procura os dois nomes, em qualquer pasta do Drive, e junta os dois arquivos (etapa 5: `CloudConfig.MOTOR_PLAYLISTS_FILE`, `DriveApi.findMotorPlaylistsFile`, `SmartMerge`, `SmartPlaylistManager`). Se uma playlist tiver o mesmo nome nos dois, vale a regra do site e as faixas do motor que faltam são acrescentadas. [código escrito e testado só em teste unitário; não validado no celular]
 
 ## Arquivos da pasta `Toxic Engine` (dono: motor)
 

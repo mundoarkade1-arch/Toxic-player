@@ -43,5 +43,8 @@ object CloudConfig {
     const val PLAYLISTS_FOLDER = "Toxic Playlists"
     const val PLAYLISTS_FILE = "playlists-inteligentes.json"
 
+    /** Playlists geradas pelo Toxic Music Engine (motor do PC). Fica na pasta "Toxic Engine"; é procurado em qualquer pasta. */
+    const val MOTOR_PLAYLISTS_FILE = "playlists-motor.json"
+
     fun playbackUri(fileId: String): String = "$SCHEME://$HOST/$fileId"
 }

@@ -72,6 +72,10 @@ class DriveApi(private val tokens: TokenProvider = DefaultTokens) {
         return listNamed("name='${CloudConfig.PLAYLISTS_FILE}' and trashed=false").firstOrNull()
     }
 
+    /** Acha o "playlists-motor.json" criado pelo motor do PC, em qualquer pasta. Devolve o mais recente. Só LÊ. */
+    fun findMotorPlaylistsFile(): DriveNamedFile? =
+        listNamed("name='${CloudConfig.MOTOR_PLAYLISTS_FILE}' and trashed=false").firstOrNull()
+
     private fun listNamed(q: String): List<DriveNamedFile> {
         val path = "/files?q=" + enc(q) + "&fields=" + enc("files(id,name,modifiedTime,size,trashed)") +
             "&orderBy=" + enc("modifiedTime desc") + "&pageSize=20&spaces=drive&corpora=user"
