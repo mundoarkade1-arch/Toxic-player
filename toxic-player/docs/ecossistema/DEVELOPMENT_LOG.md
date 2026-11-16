@@ -9,3 +9,8 @@
 - Modificado: `PlayerViewModel.kt` (import, `val history`, `onPositionDiscontinuity`, `onPlaybackStateChanged`, `toggleFav`).
 - Regras: terminou ou 90% = completa; menos de 10 s = pulo cedo; menos de 50% = pulo; resto = parcial. Pulo pesa pouco (-0,5 / -0,25). Favoritas nunca são apagadas ao limpar excesso (limite 1500 músicas).
 - Limites conhecidos: escolher outra música na lista conta como pulo se ouviu pouco; troca de fila inteira não conta (reason REMOVE); duração 0 em música da nuvem sem tags faz só `PARTIAL`.
+
+## 2026-11-15 — Agente 1 (etapa 2: perfil de gosto)
+- Criados: `taste/UserTasteProfile.kt`, teste `taste/UserTasteProfileTest.kt`.
+- Modificado: `taste/ListeningHistoryStore.kt` (função `profile`). Nada ligado a tela ainda.
+- Regras: pulo-só não cria gosto; artista desconhecido não conta; nomes comparados sem acento e sem maiúscula; afinidade 0 a 1 pelo maior.

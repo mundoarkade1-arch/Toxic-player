@@ -4,4 +4,7 @@ Status herdado (PROJECT_STATE.md do app): testes unitários escritos (inclui Sma
 Site: não executado.
 
 ## Etapa histórico de escuta
-Escrito: ListeningHistoryTest (14 testes). NÃO executado e NÃO compilado (sem Kotlin/Gradle aqui). Só o GitHub Actions do usuário pode confirmar.
+ListeningHistoryTest (14 testes): Actions VERDE segundo o usuário (build.yml roda testes; conferir no log se `testDebugUnitTest` aparece).
+
+## Etapa perfil de gosto
+UserTasteProfileTest (9 testes) escrito. NÃO compilado aqui. Aguardando Actions.
