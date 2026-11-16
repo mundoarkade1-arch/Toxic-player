@@ -48,3 +48,9 @@ Atualizado: 2026-11-15 (agente 1, auditoria). Legenda: [E] existe no código · 
 - Actions verde confirmado pelo usuário: histórico, perfil, motor, gerador.
 - Etapa 5 (tela + ViewModel): entregue, Actions NÃO confirmado.
 - Nada testado no aparelho.
+
+## Projeto C — Toxic Music Engine (motor) — 2026-11-16
+- [P] Não existe código. Só o contrato de dados proposto em `CONTRATO_MOTOR.md`.
+- [P] Roda no PC do usuário (Windows), sem servidor. Fala com site e app pelo Google Drive.
+- Próximas etapas: arrumar a casa (rodar o workflow "Limpar" nos dois repositórios), núcleo do motor com testes, ligação ao Drive, aba no site, leitura no app, análise do Media Downloader.
+- Observação: `limpar.yml` do app já apaga os `.kt` soltos e a pasta `Toxic-player-main/` repetida. Depois de rodá-lo, o "Problema de organização" do Projeto A deixa de existir.

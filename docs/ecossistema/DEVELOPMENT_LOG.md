@@ -31,3 +31,9 @@
 ## 2026-11-15 — Agente 1 (etapa 5: tela da playlist por intenção)
 - Modificados: `ui/PlaylistsScreen.kt` (botão, janela de texto, janela de resultado), `PlayerViewModel.kt` (limpa `intentReport` no início; removido o aviso verde do Drive para não aparecer com o título errado).
 - Autorização: usuário respondeu "prossiga" à pergunta sobre a tela.
+
+## 2026-11-16 — Agente 2 (diagnóstico do ecossistema com o Toxic Music Engine)
+- Lidos: os dois zips inteiros (Toxic-player-main e gerenciador-de-musicas-main), documentos de `docs/ecossistema/`, `CloudConfig.kt`, `DriveApi.findPlaylistsFile`, `app.js` e `index.html` do site, `limpar.yml`, `build.yml`.
+- Criado: `CONTRATO_MOTOR.md` (proposta dos arquivos JSON do motor no Drive). Nenhum código foi alterado.
+- Achados: (1) o app lê só `playlists-inteligentes.json`; (2) o site escreve nesse mesmo nome, então o motor usará `playlists-motor.json`; (3) a regra de segurança do site só permite conexão com o Google, então a ponte é o Drive; (4) `limpar.yml` já apaga os `.kt` soltos E a pasta `Toxic-player-main/` repetida — falta o usuário rodá-lo; (5) no site, `ECOSSISTEMA.md` está numa pasta repetida (`gerenciador-de-musicas/docs/`) — workflow `limpar.yml` novo no site corrige.
+- Não compilado, não testado (sem Android SDK/Gradle neste ambiente).
