@@ -64,11 +64,13 @@ import kotlin.math.max
 import kotlin.math.pow
 
 // ───────────── Estrutura principal + navegação ─────────────
-/** Abas: 0 Início, 1 Buscar, 2 Biblioteca (playlists e músicas do Drive), 3 No aparelho, 4 Ajustes. O Player abre por cima, ao tocar no mini player. */
+/** Abas: 0 Início, 1 Buscar, 2 Biblioteca (playlists e músicas), 3 Ajustes (inclui "Músicas do aparelho" e "Avançado"). O Player abre por cima, ao tocar no mini player. */
 @Composable
 fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
     var tab by remember { mutableIntStateOf(0) }
     var showPlayer by remember { mutableStateOf(false) }
+    var settingsStart by remember { mutableIntStateOf(0) }
+    val openDevice = { settingsStart = 5; tab = 3 }
     CloudAuthEffect(vm.cloud)
     val bg by rememberCover(vm.currentTrack, 48)
     val target = bg?.let { lerp(Neon.Glow, Color(CoverLoader.averageColor(it)), 0.5f) } ?: Neon.Glow
@@ -79,10 +81,9 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
             title = { Text("Bem-vindo ao Toxic Player", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("• Início: suas playlists, mixes e a última música. Toque no player de baixo para abri-lo.")
+                    Text("• Início: continue de onde parou e veja suas playlists. Toque no player de baixo para abri-lo.")
                     Text("• Buscar e Biblioteca: tudo o que está no seu Google Drive.")
-                    Text("• No aparelho: músicas salvas no celular (a permissão só é pedida ao abrir essa aba).")
-                    Text("• Ajustes: conta do Drive, sincronização, equalizador e atualização do app.")
+                    Text("• Ajustes: conta, equalizador, atualização e as músicas do celular. O app se atualiza sozinho.")
                 }
             },
             confirmButton = { TextButton(onClick = { vm.dismissTips() }) { Text("Entendi", color = Neon.Green, fontWeight = FontWeight.Bold) } }
@@ -95,25 +96,42 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
         bottomBar = {
             if (!showPlayer) Column {
                 AnimatedVisibility(visible = vm.currentTrack != null) { MiniPlayer(vm) { showPlayer = true } }
-                NavBar(tab, vm.update != null) { tab = it }
+                NavBar(tab, vm.update != null) { settingsStart = 0; tab = it }
             }
         }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize().clipToBounds().aurora(glowColor)) {
-            if (showPlayer) {
-                PlayerScreen(vm) { showPlayer = false }
-            } else {
-                Crossfade(targetState = tab, animationSpec = tween(220), label = "tab") { t ->
-                    when (t) {
-                        0 -> CloudScreen(vm, {}, CloudMode.HOME) { tab = it }
-                        1 -> CloudScreen(vm, {}, CloudMode.SEARCH)
-                        2 -> LibraryHub(vm) {}
-                        3 -> LibraryScreen(vm, granted, askPerm) {}
-                        else -> SettingsScreen(vm)
+            Column(Modifier.fillMaxSize()) {
+                if (!showPlayer && !vm.cloud.online) OfflineBanner(openDevice)
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    if (showPlayer) {
+                        PlayerScreen(vm) { showPlayer = false }
+                    } else {
+                        Crossfade(targetState = tab, animationSpec = tween(220), label = "tab") { t ->
+                            when (t) {
+                                0 -> CloudScreen(vm, {}, CloudMode.HOME, onNav = { tab = it }, onDevice = openDevice)
+                                1 -> CloudScreen(vm, {}, CloudMode.SEARCH)
+                                2 -> LibraryHub(vm) {}
+                                else -> SettingsScreen(vm, granted, askPerm, settingsStart)
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/** Aviso leve de "sem internet". O app continua funcionando com o que está salvo no aparelho. */
+@Composable
+private fun OfflineBanner(onDevice: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp).glass(16.dp).padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Rounded.CloudOff, null, tint = Neon.Dim, modifier = Modifier.size(18.dp))
+        Text("Sem internet. Mostrando o que está salvo no aparelho.", Modifier.weight(1f).padding(horizontal = 10.dp), fontSize = 12.sp, color = Neon.Dim)
+        MiniAction("No aparelho", Neon.Green, onDevice)
     }
 }
 
@@ -124,8 +142,7 @@ private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
         Triple("Início", Icons.Rounded.Home, 0),
         Triple("Buscar", Icons.Rounded.Search, 1),
         Triple("Biblioteca", Icons.Rounded.LibraryMusic, 2),
-        Triple("No aparelho", Icons.Rounded.PhoneAndroid, 3),
-        Triple("Ajustes", Icons.Rounded.Settings, 4)
+        Triple("Ajustes", Icons.Rounded.Settings, 3)
     )
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp).glass(30.dp, strong = true).padding(5.dp),
@@ -146,7 +163,7 @@ private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
             ) {
                 Box {
                     Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp))
-                    if (i == 4 && hasUpdate) Box(Modifier.size(8.dp).clip(CircleShape).background(Neon.Lime).align(Alignment.TopEnd))
+                    if (i == 3 && hasUpdate) Box(Modifier.size(8.dp).clip(CircleShape).background(Neon.Lime).align(Alignment.TopEnd))
                 }
                 Text(label, fontSize = 10.sp, color = tint, maxLines = 1, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
             }
@@ -640,7 +657,7 @@ fun LibraryScreen(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit, go
     BackHandler(enabled = open != null) { vm.enterFolder(null) }
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(top = 22.dp)) {
         if (!granted) {
-            PageHeader("BIBLIOTECA", "Suas músicas")
+            PageHeader("NO APARELHO", "Músicas do celular")
             PermissionCard("Permita o acesso às músicas do celular para ver e tocar a sua biblioteca.", "Permitir acesso", askPerm)
         } else if (open != null) {
             TrackList(vm, vm.tracksIn(open), groupTitle(vm, open), true, goPlayer, if (open.startsWith("P:")) open.drop(2) else null)
@@ -690,12 +707,6 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
             playlistMessage = if (text == null) "Arquivo ilegível ou maior que 1 MB." else if (count > 0) "Playlist importada: $count faixas." else "Nenhuma faixa da playlist foi encontrada na biblioteca do celular."
         }
     }
-    val jsonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
-            val text = withContext(Dispatchers.IO) { com.meuapp.player.SafeRead.readText(ctx, uri, 8 * 1024 * 1024) }
-            vm.importSmartPlaylistsJson(text)
-        }
-    }
     var newListDialog by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var pickFor by remember { mutableStateOf<Track?>(null) }
@@ -706,8 +717,7 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
     val results = if (searching) vm.searchResults() else emptyList()
 
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-        item { PageHeader("BIBLIOTECA", plural(vm.tracks.size)) }
-        vm.smartInfo?.let { info -> item { SmartInfoCard(info) { vm.dismissSmartInfo() } } }
+        item { PageHeader("NO APARELHO", plural(vm.tracks.size)) }
         item { SearchField(vm.query, vm::changeQuery, "Buscar música, artista, álbum ou pasta") }
         if (searching) {
             item { Text("Resultados · ${plural(results.size)}", fontSize = 13.sp, color = Neon.Dim, modifier = Modifier.padding(top = 4.dp)) }
@@ -726,8 +736,6 @@ private fun LibraryRoot(vm: PlayerViewModel, goPlayer: () -> Unit) {
                         }
                     }
                 }
-                item { GhostButton("Importar playlists (.json)", Modifier.fillMaxWidth()) { jsonPicker.launch(arrayOf("application/json", "text/plain", "*/*")) } }
-                item { GhostButton("Sincronizar playlists do Drive", Modifier.fillMaxWidth()) { vm.syncSmartPlaylistsNow() } }
                 if (playlistMessage.isNotBlank()) item { Text(playlistMessage, fontSize = 12.sp, color = Neon.Dim) }
             }
             if (vm.tracks.isEmpty() && vm.libMode != 3) {

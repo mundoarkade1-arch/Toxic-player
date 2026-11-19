@@ -4,6 +4,9 @@ import android.app.Application
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,6 +39,25 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
     var limitBytes by mutableStateOf(0L); private set
     var pendingAuth by mutableStateOf<PendingIntent?>(null); private set
     var connecting by mutableStateOf(false); private set
+
+    // ---------- rede ----------
+    /** Há internet agora? Sem rede o app mostra só o que está salvo no aparelho. */
+    var online by mutableStateOf(true); private set
+
+    private fun watchNetwork() {
+        try {
+            val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            online = cm.activeNetwork?.let { cm.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) } ?: false
+            cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    scope.launch(Dispatchers.Main) { online = true; if (indexLoaded) maybeAutoSync() }
+                }
+                override fun onLost(network: Network) {
+                    scope.launch(Dispatchers.Main) { online = false }
+                }
+            })
+        } catch (e: Exception) { /* sem monitor de rede: o app segue como se houvesse internet */ }
+    }
 
     // ---------- biblioteca ----------
     var tracks by mutableStateOf<List<CloudTrack>>(emptyList()); private set
@@ -109,6 +131,7 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
 
     init {
         CloudAuth.init(app); CloudStorage.init(app)
+        watchNetwork()
         repo = CloudRepository(app, api)
         connected = CloudAuth.connected
         accountName = prefs.getString("acc_name", "") ?: ""
@@ -242,7 +265,7 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
     // ---------- sincronização ----------
     /** Sincronização automática ao abrir o app: só se conectado e a última tiver mais de [CloudConfig.AUTO_SYNC_INTERVAL_MS]. */
     fun maybeAutoSync() {
-        if (!connected || syncing) return
+        if (!connected || syncing || !online) return
         if (System.currentTimeMillis() - repo.lastSyncMs > CloudConfig.AUTO_SYNC_INTERVAL_MS) sync(full = false)
     }
 
@@ -264,9 +287,8 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
             loadAccount()
             withContext(Dispatchers.Main) {
                 lastSyncMs = repo.lastSyncMs
-                message = r.enrichError?.message ?: if (r.full) "Biblioteca atualizada: ${tracks.size} músicas."
-                else if (r.added + r.modified + r.removed == 0) "Biblioteca já está em dia."
-                else "Sincronizado: +${r.added} novas, ${r.modified} alteradas, ${r.removed} removidas."
+                // Só erro vira mensagem. "Tudo certo" fica em silêncio.
+                message = r.enrichError?.message
                 try { onSynced?.invoke() } catch (e: Exception) { /* playlists do Drive nunca podem estragar a sincronização */ }
             }
         } catch (e: CancellationException) { throw e
@@ -276,7 +298,8 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
             if (kind == CloudErrorKind.ACCESS_REVOKED || kind == CloudErrorKind.TOKEN_EXPIRED) {
                 withContext(Dispatchers.Main) { notifyReconnectNeeded() }
             }
-            fail(e, fallback = CloudErrorKind.SYNC_ERROR)
+            // Sem internet não é erro do app: o aviso leve de "sem internet" já cobre isso.
+            if (kind != CloudErrorKind.NO_INTERNET) fail(e, fallback = CloudErrorKind.SYNC_ERROR)
         } finally {
             withContext(Dispatchers.Main) { syncing = false; progress = SyncProgress.Idle; connected = CloudAuth.connected }
             refreshUsage()

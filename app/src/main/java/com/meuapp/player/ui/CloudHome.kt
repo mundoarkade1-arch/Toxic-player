@@ -56,8 +56,9 @@ private fun gradient(hue: Float) = Brush.linearGradient(listOf(Color.hsv(hue, 0.
  * [onOpen] abre uma lista na aba Biblioteca (view: 1 artistas, 3 gêneros; key: "A:nome" / "G:nome").
  */
 @Composable
-fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, onLibrary: () -> Unit, onOpen: (Int, String) -> Unit) {
-    val all = cloud.tracks
+fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, onDevice: () -> Unit, onOpen: (Int, String) -> Unit) {
+    // Sem internet, o Início mostra só o que está salvo no aparelho.
+    val all = if (cloud.online) cloud.tracks else cloud.tracks.filter { it.id in cloud.offlineIds }
     val seed = remember { System.currentTimeMillis() / 86_400_000L }
     val recent = remember(all) { CloudHomeLogic.recent(all, 15) }
     val artists = remember(all) { CloudHomeLogic.topArtists(all, 12) }
@@ -73,6 +74,18 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
             out += Mix("Só ${a.name}", "${a.count} músicas", CloudHomeLogic.shuffled(CloudHomeLogic.byArtist(all, a.name), seed + i + 11, 40), CloudHomeLogic.hueOf(a.name))
         }
         out
+    }
+    // Continuar ouvindo: a música atual (retoma de onde parou) e as últimas que você ouviu.
+    val currentId = vm.currentTrack?.cloudId
+    val resume = remember(all, currentId) {
+        val byId = all.associateBy { it.id }
+        val out = ArrayList<CloudTrack>()
+        currentId?.let { id -> byId[id]?.let { out += it } }
+        vm.history.entriesByKey().values
+            .filter { it.key.startsWith("c:") && it.lastPlayedAt > 0L }
+            .sortedByDescending { it.lastPlayedAt }
+            .forEach { e -> val t = byId[e.key.removePrefix("c:")]; if (t != null && out.none { it.id == t.id }) out += t }
+        out.take(12)
     }
     val favs = all.filter { vm.isFav(it.numericId) }
     val lists = vm.playlists.keys.sorted()
@@ -95,34 +108,20 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
 
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("TOXIC CLOUD", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp, fontWeight = FontWeight.SemiBold)
-                    Text(CloudHomeLogic.greeting(hour), fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                }
-                GhostButton("Biblioteca", onClick = onLibrary)
+            Column {
+                Text("TOXIC PLAYER", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp, fontWeight = FontWeight.SemiBold)
+                Text(CloudHomeLogic.greeting(hour), fontSize = 28.sp, fontWeight = FontWeight.Bold)
             }
         }
-        if (cloud.syncing) item {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Sincronizando sua biblioteca...", fontSize = 12.sp, color = Neon.Dim)
-                LinearProgressIndicator(Modifier.fillMaxWidth(), color = Neon.Green)
-            }
-        }
-        vm.smartInfo?.let { info -> item { SmartInfoCard(info) { vm.dismissSmartInfo() } } }
-        if (all.isEmpty()) {
+        cloud.message?.let { m -> item { MessageCard(m) { cloud.dismissMessage() } } }
+        if (resume.isNotEmpty()) {
+            item { Section("Continuar ouvindo") }
             item {
-                EmptyState(
-                    Icons.Rounded.CloudQueue,
-                    if (cloud.syncing) "Procurando músicas no seu Drive..." else "Sua biblioteca está vazia. Envie músicas para o Drive e toque em Biblioteca > Atualizar biblioteca."
-                )
-            }
-            return@LazyColumn
-        }
-        items(shortcuts.chunked(2)) { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { (label, icon, action) -> Shortcut(label, icon, Modifier.weight(1f), action) }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
+                TrackRow(cloud, resume) { i ->
+                    // A primeira é a música atual: só retoma de onde parou.
+                    if (i == 0 && currentId != null && resume[0].id == currentId) { if (!vm.isPlaying) vm.toggle(); goPlayer() }
+                    else play(resume, i)
+                }
             }
         }
         val myLists = vm.groups(3).filter { it.count > 0 }
@@ -141,6 +140,28 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
                         }
                     }
                 }
+            }
+        }
+        if (all.isEmpty()) {
+            item {
+                if (!cloud.online) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                        EmptyState(Icons.Rounded.CloudOff, "Sem internet e nenhuma música baixada ainda. Quando a rede voltar, tudo aparece aqui.")
+                        GhostButton("Ver músicas do aparelho", onClick = onDevice)
+                    }
+                } else {
+                    EmptyState(
+                        Icons.Rounded.CloudQueue,
+                        if (cloud.syncing) "Carregando suas músicas..." else "Sua biblioteca está vazia. Envie músicas para o Drive; o app atualiza sozinho."
+                    )
+                }
+            }
+            return@LazyColumn
+        }
+        items(shortcuts.chunked(2)) { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { (label, icon, action) -> Shortcut(label, icon, Modifier.weight(1f), action) }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
         if (mixes.isNotEmpty()) {

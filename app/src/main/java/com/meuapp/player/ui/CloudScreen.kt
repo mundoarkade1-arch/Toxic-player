@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -43,6 +44,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -80,15 +86,15 @@ internal fun CloudAuthEffect(cloud: CloudManager) {
     }
 }
 
-/** Início (playlists, mixes, descubra) e Buscar. [onNav] troca de aba (2 = Biblioteca). */
+/** Início (continuar ouvindo, playlists, mixes) e Buscar. [onNav] troca de aba (2 = Biblioteca). [onDevice] abre as músicas do aparelho. */
 @Composable
-fun CloudScreen(vm: PlayerViewModel, goPlayer: () -> Unit, mode: CloudMode = CloudMode.HOME, onNav: (Int) -> Unit = {}) {
+fun CloudScreen(vm: PlayerViewModel, goPlayer: () -> Unit, mode: CloudMode = CloudMode.HOME, onNav: (Int) -> Unit = {}, onDevice: () -> Unit = {}) {
     val cloud = vm.cloud
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp)) {
             if (!cloud.connected) ConnectCard(cloud)
             else if (mode == CloudMode.SEARCH) CloudSearch(vm, cloud, goPlayer)
-            else CloudHome(vm, cloud, goPlayer, onLibrary = { onNav(2) }) { view, key -> cloud.changeView(view); cloud.enterGroup(key); onNav(2) }
+            else CloudHome(vm, cloud, goPlayer, onDevice) { view, key -> cloud.changeView(view); cloud.enterGroup(key); onNav(2) }
         }
     }
 }
@@ -97,9 +103,11 @@ fun CloudScreen(vm: PlayerViewModel, goPlayer: () -> Unit, mode: CloudMode = Clo
 @Composable
 private fun CloudSearch(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit) {
     var q by remember { mutableStateOf("") }
-    val results = remember(cloud.tracks, q, cloud.folderPaths) {
+    val results = remember(cloud.tracks, q, cloud.folderPaths, cloud.online, cloud.offlineIds) {
         if (q.isBlank()) emptyList()
-        else CloudLibrary.sort(CloudLibrary.filter(cloud.tracks, q, paths = cloud.folderPaths), CloudLibrary.SORT_TITLE).take(200)
+        else CloudLibrary.sort(CloudLibrary.filter(cloud.tracks, q, paths = cloud.folderPaths), CloudLibrary.SORT_TITLE)
+            .let { r -> if (cloud.online) r else r.filter { it.id in cloud.offlineIds } }   // sem internet: só o que está salvo
+            .take(200)
     }
     val playerList = remember(results, cloud.playerTracks) { results.mapNotNull { cloud.trackByNumericId(it.numericId) } }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
@@ -120,7 +128,7 @@ private fun CloudSearch(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -
 
 @Composable
 internal fun ConnectCard(cloud: CloudManager, header: Boolean = true) {
-    if (header) PageHeader("TOXIC CLOUD", "Sua música no Drive")
+    if (header) PageHeader("TOXIC PLAYER", "Sua música no Drive")
     Column(
         Modifier.fillMaxWidth().glass(28.dp).padding(22.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -129,15 +137,15 @@ internal fun ConnectCard(cloud: CloudManager, header: Boolean = true) {
             Modifier.size(76.dp).clip(CircleShape).background(Brush.linearGradient(listOf(Neon.Green.copy(alpha = 0.32f), Neon.Lime.copy(alpha = 0.10f)))),
             contentAlignment = Alignment.Center
         ) { Icon(Icons.Rounded.Cloud, null, tint = Neon.Green, modifier = Modifier.size(38.dp)) }
-        Text("Conecte sua conta Google para tocar pela internet as músicas que já estão no seu Drive, sem baixar tudo para o celular.", color = Neon.Dim, textAlign = TextAlign.Center)
-        Text("O app pede acesso somente de leitura ao Drive, não guarda sua senha e você pode desconectar quando quiser.", color = Neon.Faint, fontSize = 12.sp, textAlign = TextAlign.Center)
-        PrimaryButton(if (cloud.connecting) "Conectando..." else "Conectar conta Google") { cloud.connect() }
+        Text("Entre com o Google para ouvir as músicas do seu Drive.", color = Neon.Dim, textAlign = TextAlign.Center)
+        PrimaryButton(if (cloud.connecting) "Entrando..." else "Entrar com o Google") { cloud.connect() }
+        Text("Só leitura. Você sai quando quiser.", color = Neon.Faint, fontSize = 12.sp, textAlign = TextAlign.Center)
     }
     cloud.message?.let { MessageCard(it) { cloud.dismissMessage() } }
 }
 
 @Composable
-private fun MessageCard(text: String, onClose: () -> Unit) {
+internal fun MessageCard(text: String, onClose: () -> Unit) {
     Spacer(Modifier.height(10.dp))
     Row(Modifier.fillMaxWidth().glass(16.dp).padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(text, Modifier.weight(1f), fontSize = 13.sp)
@@ -145,7 +153,7 @@ private fun MessageCard(text: String, onClose: () -> Unit) {
     }
 }
 
-/** Biblioteca > Músicas do Drive: pastas, artistas, álbuns, gêneros e todas as músicas (sem sincronização aqui; isso fica em Ajustes). */
+/** Biblioteca > Músicas: todas as músicas (ou pastas, artistas, álbuns e gêneros, pelo botão de filtros). A busca fica no topo da Biblioteca. */
 @Composable
 internal fun DriveSongs(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit) {
     var confirmDownload by remember { mutableStateOf<List<CloudTrack>?>(null) }
@@ -154,27 +162,24 @@ internal fun DriveSongs(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -
     val base = remember(cloud.tracks) { cloud.tracks }
     // Listas de gênero e a visão "Recentes" mostram sempre as músicas mais novas do Drive no topo.
     val effSort = if (open?.startsWith("G:") == true || cloud.viewMode == 4) CloudLibrary.SORT_RECENT else cloud.sortMode
-    val filtered = remember(base, cloud.query, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, open, effSort, cloud.folderPaths) {
+    // Sem internet, só entram as músicas baixadas no aparelho.
+    val offOnly = cloud.offlineOnly || !cloud.online
+    val filtered = remember(base, cloud.query, cloud.formatFilter, offOnly, cloud.offlineIds, open, effSort, cloud.folderPaths) {
         CloudLibrary.sort(
-            CloudLibrary.filter(base, cloud.query, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, open, cloud.folderPaths),
+            CloudLibrary.filter(base, cloud.query, cloud.formatFilter, offOnly, cloud.offlineIds, open, cloud.folderPaths),
             effSort
         )
     }
     val searching = cloud.query.isNotBlank()
     val showGroups = open == null && !searching && (cloud.viewMode in 1..3 || cloud.viewMode == 5)
-    val groups = remember(base, cloud.viewMode, cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, cloud.folderPaths) {
-        val pool = CloudLibrary.filter(base, "", cloud.formatFilter, cloud.offlineOnly, cloud.offlineIds, null, cloud.folderPaths)
+    val groups = remember(base, cloud.viewMode, cloud.formatFilter, offOnly, cloud.offlineIds, cloud.folderPaths) {
+        val pool = CloudLibrary.filter(base, "", cloud.formatFilter, offOnly, cloud.offlineIds, null, cloud.folderPaths)
         when (cloud.viewMode) { 1 -> CloudLibrary.artists(pool); 2 -> CloudLibrary.albums(pool); 5 -> CloudLibrary.folders(pool, cloud.folderPaths); else -> CloudLibrary.genres(pool) }
     }
     val playerList = remember(filtered, cloud.playerTracks) { filtered.mapNotNull { cloud.trackByNumericId(it.numericId) } }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (open == null) {
-            item {
-                SearchField(cloud.query, cloud::changeQuery, "Buscar na nuvem")
-            }
-            item { Filters(cloud, base) }
-        } else {
+        if (open != null) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { cloud.enterGroup(null) }) { Icon(Icons.Rounded.ArrowBack, "Voltar", tint = Neon.Green) }
@@ -197,7 +202,7 @@ internal fun DriveSongs(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -
             item {
                 EmptyState(
                     Icons.Rounded.CloudQueue,
-                    if (cloud.syncing) "Procurando músicas no seu Drive..." else "Nenhuma música de áudio encontrada no seu Drive. Envie arquivos MP3, FLAC, WAV, M4A, AAC, OGG ou OPUS e sincronize em Ajustes > Conta e sincronização."
+                    if (cloud.syncing) "Carregando suas músicas..." else "Nenhuma música de áudio encontrada no seu Drive. Envie arquivos MP3, FLAC, WAV, M4A, AAC, OGG ou OPUS; o app atualiza sozinho."
                 )
             }
         } else if (showGroups) {
@@ -205,7 +210,13 @@ internal fun DriveSongs(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -
                 GroupCard(g.name, g.count, when (cloud.viewMode) { 1 -> Icons.Rounded.Person; 2 -> Icons.Rounded.Album; 5 -> Icons.Rounded.Folder; else -> Icons.Rounded.LibraryMusic }) { cloud.enterGroup(g.key) }
             }
         } else if (filtered.isEmpty()) {
-            item { EmptyState(Icons.Rounded.Search, "Nada encontrado com estes filtros.") }
+            item {
+                EmptyState(
+                    if (!cloud.online) Icons.Rounded.CloudOff else Icons.Rounded.Search,
+                    if (!cloud.online) "Sem internet e nenhuma música baixada ainda. Baixe músicas pelo menu (três pontinhos) para ouvir offline."
+                    else "Nada encontrado."
+                )
+            }
         } else {
             items(filtered.size, key = { filtered[it].id }) { i ->
                 CloudTrackRow(vm, cloud, filtered[i]) { vm.playList(playerList, i); goPlayer() }
@@ -256,17 +267,32 @@ private fun AccountCard(cloud: CloudManager) {
 }
 
 @Composable
-private fun ActionButtons(vm: PlayerViewModel, cloud: CloudManager, onDisconnect: () -> Unit) {
+private fun AccountButtons(cloud: CloudManager, onDisconnect: () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        GhostButton("Trocar conta", Modifier.weight(1f)) { cloud.switchAccount() }
+        GhostButton("Desconectar", Modifier.weight(1f), onDisconnect)
+    }
+}
+
+/** Botões de bastidor (tudo isso já acontece sozinho; ficam aqui só para quem quiser forçar). */
+@Composable
+private fun MaintenanceButtons(vm: PlayerViewModel, cloud: CloudManager) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val jsonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val text = withContext(Dispatchers.IO) { com.meuapp.player.SafeRead.readText(ctx, uri, 8 * 1024 * 1024) }
+            vm.importSmartPlaylistsJson(text)
+        }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("O app já sincroniza sozinho. Use estes botões só se algo parecer desatualizado.", fontSize = 12.sp, color = Neon.Dim)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton("Sincronizar", Modifier.weight(1f)) { cloud.syncNow() }
             GhostButton("Atualizar biblioteca", Modifier.weight(1f)) { cloud.refreshLibrary() }
         }
         GhostButton("Sincronizar playlists do Drive", Modifier.fillMaxWidth()) { vm.syncSmartPlaylistsNow() }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GhostButton("Trocar conta", Modifier.weight(1f)) { cloud.switchAccount() }
-            GhostButton("Desconectar", Modifier.weight(1f), onDisconnect)
-        }
+        GhostButton("Importar playlists (.json)", Modifier.fillMaxWidth()) { jsonPicker.launch(arrayOf("application/json", "text/plain", "*/*")) }
     }
 }
 
@@ -290,34 +316,53 @@ private fun SyncStatus(cloud: CloudManager) {
     }
 }
 
+/** Há algum filtro ou ordem diferente do padrão? (para acender o botão de filtros) */
+internal fun filtersActive(cloud: CloudManager) =
+    cloud.viewMode != 0 || cloud.offlineOnly || cloud.formatFilter != null || cloud.sortMode != CloudLibrary.SORT_TITLE
+
+/** Filtros, visões e ordem da lista de músicas, atrás de um botão pequeno. */
 @Composable
-private fun Filters(cloud: CloudManager, all: List<CloudTrack>) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Chip("Músicas", cloud.viewMode == 0) { cloud.changeView(0) }
-            Chip("Artistas", cloud.viewMode == 1) { cloud.changeView(1) }
-            Chip("Álbuns", cloud.viewMode == 2) { cloud.changeView(2) }
-            Chip("Gêneros", cloud.viewMode == 3) { cloud.changeView(3) }
-            Chip("Pastas", cloud.viewMode == 5) { cloud.changeView(5) }
-            Chip("Recentes", cloud.viewMode == 4) { cloud.changeView(4) }
-            Chip("Offline", cloud.offlineOnly) { cloud.toggleOfflineOnly() }
-        }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Chip("Título", cloud.sortMode == CloudLibrary.SORT_TITLE) { cloud.changeSort(CloudLibrary.SORT_TITLE) }
-            Chip("Artista", cloud.sortMode == CloudLibrary.SORT_ARTIST) { cloud.changeSort(CloudLibrary.SORT_ARTIST) }
-            Chip("Álbum", cloud.sortMode == CloudLibrary.SORT_ALBUM) { cloud.changeSort(CloudLibrary.SORT_ALBUM) }
-            Chip("Duração", cloud.sortMode == CloudLibrary.SORT_DURATION) { cloud.changeSort(CloudLibrary.SORT_DURATION) }
-            Chip("Tamanho", cloud.sortMode == CloudLibrary.SORT_SIZE) { cloud.changeSort(CloudLibrary.SORT_SIZE) }
-            Chip("Recentes", cloud.sortMode == CloudLibrary.SORT_RECENT) { cloud.changeSort(CloudLibrary.SORT_RECENT) }
-        }
-        val formats = remember(all) { CloudLibrary.formatsPresent(all) }
-        if (formats.size > 1) {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip("Todos", cloud.formatFilter == null) { cloud.changeFormat(null) }
-                formats.forEach { f -> Chip(f.label, cloud.formatFilter == f) { cloud.changeFormat(f) } }
+internal fun FiltersDialog(cloud: CloudManager, onClose: () -> Unit) {
+    val formats = remember(cloud.tracks) { CloudLibrary.formatsPresent(cloud.tracks) }
+    GlassDialog(
+        onDismissRequest = onClose,
+        title = { Text("Filtros e ordem", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Ver por", fontSize = 12.sp, color = Neon.Dim)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Músicas", cloud.viewMode == 0) { cloud.changeView(0) }
+                    Chip("Artistas", cloud.viewMode == 1) { cloud.changeView(1) }
+                    Chip("Álbuns", cloud.viewMode == 2) { cloud.changeView(2) }
+                    Chip("Gêneros", cloud.viewMode == 3) { cloud.changeView(3) }
+                    Chip("Pastas", cloud.viewMode == 5) { cloud.changeView(5) }
+                    Chip("Recentes", cloud.viewMode == 4) { cloud.changeView(4) }
+                }
+                Text("Ordem", fontSize = 12.sp, color = Neon.Dim)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Título", cloud.sortMode == CloudLibrary.SORT_TITLE) { cloud.changeSort(CloudLibrary.SORT_TITLE) }
+                    Chip("Artista", cloud.sortMode == CloudLibrary.SORT_ARTIST) { cloud.changeSort(CloudLibrary.SORT_ARTIST) }
+                    Chip("Álbum", cloud.sortMode == CloudLibrary.SORT_ALBUM) { cloud.changeSort(CloudLibrary.SORT_ALBUM) }
+                    Chip("Duração", cloud.sortMode == CloudLibrary.SORT_DURATION) { cloud.changeSort(CloudLibrary.SORT_DURATION) }
+                    Chip("Tamanho", cloud.sortMode == CloudLibrary.SORT_SIZE) { cloud.changeSort(CloudLibrary.SORT_SIZE) }
+                    Chip("Recentes", cloud.sortMode == CloudLibrary.SORT_RECENT) { cloud.changeSort(CloudLibrary.SORT_RECENT) }
+                }
+                Text("Mostrar", fontSize = 12.sp, color = Neon.Dim)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Chip("Tudo", !cloud.offlineOnly) { if (cloud.offlineOnly) cloud.toggleOfflineOnly() }
+                    Chip("Só baixadas", cloud.offlineOnly) { if (!cloud.offlineOnly) cloud.toggleOfflineOnly() }
+                }
+                if (formats.size > 1) {
+                    Text("Formato", fontSize = 12.sp, color = Neon.Dim)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Chip("Todos", cloud.formatFilter == null) { cloud.changeFormat(null) }
+                        formats.forEach { f -> Chip(f.label, cloud.formatFilter == f) { cloud.changeFormat(f) } }
+                    }
+                }
             }
-        }
-    }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("Pronto", color = Neon.Green, fontWeight = FontWeight.Bold) } }
+    )
 }
 
 @Composable
@@ -334,6 +379,7 @@ private fun CloudTrackRow(vm: PlayerViewModel, cloud: CloudManager, t: CloudTrac
     var addDialog by remember { mutableStateOf(false) }
     val fav = vm.isFav(t.numericId)
     val rowShape = RoundedCornerShape(18.dp)
+    // Linha simples: capa, título, artista, coração e menu.
     Row(
         Modifier.fillMaxWidth().clip(rowShape)
             .then(
@@ -346,29 +392,12 @@ private fun CloudTrackRow(vm: PlayerViewModel, cloud: CloudManager, t: CloudTrac
         TrackThumb(pt, now, vm.isPlaying)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (now) Neon.Green else Color.White, fontWeight = FontWeight.Medium)
-            Text("${t.artist} · ${t.album}", fontSize = 12.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    t.format.label, fontSize = 10.sp, color = Neon.Green,
-                    modifier = Modifier.border(1.dp, Neon.Green.copy(alpha = 0.5f), RoundedCornerShape(6.dp)).padding(horizontal = 5.dp, vertical = 1.dp)
-                )
-                val dur = if (t.durationMs > 0) fmt(t.durationMs) + " · " else ""
-                val status = when {
-                    now && offline -> "tocando offline"
-                    now -> "streaming"
-                    offline -> "offline"
-                    cloud.isCached(t) -> "em cache"
-                    else -> "nuvem"
-                }
-                Text("$dur${CloudLibrary.formatSize(t.size)} · $status", fontSize = 11.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+            Text(t.artist, fontSize = 12.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        when {
-            dl != null -> Box(Modifier.size(40.dp).clickable { cloud.cancelDownload(t.id) }, contentAlignment = Alignment.Center) {
+        if (dl != null) {
+            Box(Modifier.size(40.dp).clickable { cloud.cancelDownload(t.id) }, contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(progress = { dl }, modifier = Modifier.size(22.dp), color = Neon.Green, strokeWidth = 2.dp)
             }
-            offline -> Icon(Icons.Rounded.DownloadDone, "Disponível offline", tint = Neon.Green, modifier = Modifier.padding(horizontal = 8.dp).size(22.dp))
-            else -> Icon(Icons.Rounded.CloudQueue, "Streaming", tint = Neon.Dim, modifier = Modifier.padding(horizontal = 8.dp).size(22.dp))
         }
         IconButton(onClick = { vm.toggleFav(t.numericId) }) {
             Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, "Favoritar", tint = if (fav) Neon.Green else Neon.Dim)
@@ -445,18 +474,24 @@ private fun StorageCard(cloud: CloudManager) {
 }
 
 
-/** Ajustes > Conta e sincronização: conta Google, sincronizar, playlists do Drive, cache e downloads offline. */
+/**
+ * Ajustes > Conta do Google ([advanced] = false) ou Ajustes > Avançado ([advanced] = true: sincronização, importação, cache e downloads).
+ */
 @Composable
-internal fun CloudSettings(vm: PlayerViewModel) {
+internal fun CloudSettings(vm: PlayerViewModel, advanced: Boolean = false) {
     val cloud = vm.cloud
     var confirmDisconnect by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!cloud.connected) {
             ConnectCard(cloud, header = false)
-        } else {
+        } else if (!advanced) {
             AccountCard(cloud)
-            ActionButtons(vm, cloud) { confirmDisconnect = true }
+            AccountButtons(cloud) { confirmDisconnect = true }
+            cloud.message?.let { MessageCard(it) { cloud.dismissMessage() } }
+            Spacer(Modifier.height(16.dp))
+        } else {
             if (cloud.syncing) SyncStatus(cloud)
+            MaintenanceButtons(vm, cloud)
             cloud.message?.let { MessageCard(it) { cloud.dismissMessage() } }
             vm.smartInfo?.let { info -> SmartInfoCard(info) { vm.dismissSmartInfo() } }
             StorageCard(cloud)

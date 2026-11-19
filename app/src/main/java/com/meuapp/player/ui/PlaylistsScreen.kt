@@ -73,63 +73,76 @@ internal fun PlaylistCover(vm: PlayerViewModel, name: String, modifier: Modifier
     }
 }
 
-/** Biblioteca: suas playlists e todas as músicas do Drive, separadas. */
+/** Biblioteca: só "Playlists" e "Músicas", com a busca em cima. Filtros e ordem ficam atrás de um botão pequeno. */
 @Composable
 fun LibraryHub(vm: PlayerViewModel, goPlayer: () -> Unit) {
     val cloud = vm.cloud
     var section by remember { mutableIntStateOf(if (cloud.openGroup != null) 1 else 0) }
+    var openPlaylist by remember { mutableStateOf<String?>(null) }
+    var playlistQuery by remember { mutableStateOf("") }
+    var showFilters by remember { mutableStateOf(false) }
     BackHandler(enabled = section == 1 && cloud.openGroup != null) { cloud.enterGroup(null) }
+    val showSearch = if (section == 0) openPlaylist == null else (cloud.connected && cloud.openGroup == null)
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(top = 24.dp)) {
-        PageHeader("BIBLIOTECA", if (section == 0) "Suas playlists" else "Músicas do Drive")
-        SegmentedTabs(listOf("Playlists", "Músicas do Drive"), section) { section = it }
+        PageHeader("BIBLIOTECA", if (section == 0) "Suas playlists" else "Suas músicas")
+        if (showSearch) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (section == 0) SearchField(playlistQuery, { playlistQuery = it }, "Buscar playlist", Modifier.weight(1f))
+                else SearchField(cloud.query, cloud::changeQuery, "Buscar música, artista ou álbum", Modifier.weight(1f))
+                if (section == 1) {
+                    IconButton(onClick = { showFilters = true }) {
+                        Icon(Icons.Rounded.Tune, "Filtros e ordem", tint = if (filtersActive(cloud)) Neon.Green else Neon.Dim)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        SegmentedTabs(listOf("Playlists", "Músicas"), section) { section = it }
         Spacer(Modifier.height(10.dp))
-        if (section == 0) PlaylistsSection(vm, goPlayer)
+        if (section == 0) PlaylistsSection(vm, goPlayer, playlistQuery, openPlaylist) { openPlaylist = it }
         else if (!cloud.connected) ConnectCard(cloud, header = false)
         else DriveSongs(vm, cloud, goPlayer)
     }
+    if (showFilters) FiltersDialog(cloud) { showFilters = false }
 }
 
 @Composable
-private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var open by remember { mutableStateOf<String?>(null) }
+private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit, query: String, open: String?, onOpen: (String?) -> Unit) {
     var newDialog by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
+    var plusMenu by remember { mutableStateOf(false) }
     var intentDialog by remember { mutableStateOf(false) }
     var intentText by remember { mutableStateOf("") }
     var intentResult by remember { mutableStateOf<String?>(null) }
-    val jsonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
-            val text = withContext(Dispatchers.IO) { com.meuapp.player.SafeRead.readText(ctx, uri, 8 * 1024 * 1024) }
-            vm.importSmartPlaylistsJson(text)
-        }
-    }
-    BackHandler(enabled = open != null) { open = null }
+    BackHandler(enabled = open != null) { onOpen(null) }
 
     val current = open
     if (current != null && vm.playlists.containsKey(current)) {
-        TrackList(vm, vm.tracksIn("P:$current"), current, true, goPlayer, playlist = current, onBack = { open = null })
+        TrackList(vm, vm.tracksIn("P:$current"), current, true, goPlayer, playlist = current, onBack = { onOpen(null) })
         return
     }
 
-    val groups = vm.groups(3)
+    val all = vm.groups(3)
+    val groups = if (query.isBlank()) all else all.filter { it.name.contains(query.trim(), ignoreCase = true) }
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-        vm.smartInfo?.let { info -> item { SmartInfoCard(info) { vm.dismissSmartInfo() } } }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                GhostButton("Criar playlist", Modifier.weight(1f)) { newDialog = true }
-                GhostButton("Sincronizar", Modifier.weight(1f)) { vm.syncSmartPlaylistsNow() }
+            Box {
+                GhostButton("Nova playlist", Modifier.fillMaxWidth()) { plusMenu = true }
+                GlassMenu(expanded = plusMenu, onDismissRequest = { plusMenu = false }) {
+                    DropdownMenuItem(text = { Text("Playlist vazia") }, onClick = { plusMenu = false; newDialog = true })
+                    DropdownMenuItem(text = { Text("Por intenção (inteligente)") }, onClick = { plusMenu = false; intentDialog = true })
+                }
             }
         }
-        item { GhostButton("Importar playlists (.json)", Modifier.fillMaxWidth()) { jsonPicker.launch(arrayOf("application/json", "text/plain", "*/*")) } }
-        item { GhostButton("Criar por intenção (inteligente)", Modifier.fillMaxWidth()) { intentDialog = true } }
-        if (groups.isEmpty()) item { EmptyState(Icons.Rounded.QueueMusic, "Nenhuma playlist ainda.") }
+        if (groups.isEmpty()) item {
+            if (query.isBlank()) EmptyState(Icons.Rounded.QueueMusic, "Nenhuma playlist ainda.")
+            else EmptyState(Icons.Rounded.Search, "Nenhuma playlist com \"${query.trim()}\".")
+        }
         items(groups.chunked(2)) { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 row.forEach { g ->
                     val name = g.name
-                    Column(Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).clickable { open = name }) {
+                    Column(Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).clickable { onOpen(name) }) {
                         PlaylistCover(vm, name, Modifier.fillMaxWidth().aspectRatio(1f), 52.dp)
                         Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
                         Text(plural(g.count), fontSize = 11.sp, color = Neon.Dim)

@@ -1,6 +1,15 @@
 # Changelog
 
 ## Não lançado
+### Alterado (app mais parecido com o Spotify, itens 2 a 9)
+- Barra de baixo com 4 abas: Início, Buscar, Biblioteca, Ajustes. "No aparelho" foi para Ajustes > Músicas do aparelho.
+- Botões de bastidor (sincronizar, atualizar biblioteca, importar playlists .json, sincronizar playlists do Drive, cache, downloads) foram para Ajustes > Avançado. O app continua sincronizando sozinho.
+- Mensagens de sincronização só aparecem em caso de erro; o Início não mostra mais "sincronizando" nem o botão Biblioteca.
+- Biblioteca limpa: só Playlists e Músicas, com busca no topo; filtros, visões e ordem atrás de um botão pequeno.
+- Linhas de música simples: capa, título, artista, coração e menu.
+- Primeira conexão com texto curto e botão "Entrar com o Google".
+- Início com "Continuar ouvindo" e "Suas playlists" no topo.
+- Sem internet: faixa leve de aviso e só as músicas salvas no aparelho; sincronização automática pausa e volta com a rede. Código escrito; ainda não compilado pelo Actions nem testado no aparelho.
 ### Adicionado (aviso de conta caída)
 - Notificação "Reconecte sua conta do Google" quando a conta do Drive cai ou o acesso é revogado (na sincronização ou durante a música). Tocar nela abre o app e a reconexão. A permissão de notificação só é pedida nesse momento, com explicação curta, uma vez. Código escrito; ainda não compilado pelo Actions nem testado no aparelho.
 ### Adicionado (playlists do motor)

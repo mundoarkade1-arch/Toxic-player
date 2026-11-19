@@ -28,7 +28,7 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 ## Nova navegação estilo Spotify (etapa 1) — código escrito, ainda não compilado pelo Actions
 Abas: **Início** (playlists, mixes, descubra), **Buscar** (procura no Drive; menu da música guarda em playlist), **Biblioteca** (Playlists com capas genéricas + Músicas do Drive), **No aparelho** (músicas do celular; permissão só aqui), **Ajustes** (Conta e sincronização, Áudio e equalizador, Atualização do app). O player fica recolhido (mini player) e só abre ao tocar nele; a fila é restaurada na última música.
 Arquivos: `ui/Screens.kt` (App/NavBar), `ui/CloudScreen.kt` (Início/Buscar/DriveSongs/CloudSettings), `ui/PlaylistsScreen.kt` (LibraryHub, capas), `ui/SettingsScreen.kt`, `ui/CloudHome.kt` (seção "Suas playlists").
-**Falta (etapa 2):** modo offline: sem internet o app pergunta se quer entrar no modo offline e só então mostra "No aparelho"; opção em Ajustes para deixar sempre no modo offline.
+**(Antigo — substituído pelo item 9 abaixo)** Abas antigas: Início, Buscar, Biblioteca, No aparelho, Ajustes. Agora são 4 (Início, Buscar, Biblioteca, Ajustes).
 
 ## Velocidade (etapa de desempenho)
 - Playlists do Drive: `Regex` agora é compilada uma vez (antes recompilava milhares de vezes a cada abertura, na thread principal); palavras de artista e pastas calculadas uma vez; a conta roda em segundo plano (Dispatchers.Default) e é PULADA se biblioteca e arquivo não mudaram (assinatura guardada em `toxic_smart/sig`). `CloudLibrary.normalize` também usa Regex pré-compilada (ajuda busca e filtros).
@@ -38,14 +38,14 @@ Arquivos: `ui/Screens.kt` (App/NavBar), `ui/CloudScreen.kt` (Início/Buscar/Driv
 
 ## Plano "mais parecido com o Spotify" (9 itens, um por vez)
 1. Notificação de conta caída — **FEITO (código escrito, ainda não compilado pelo Actions nem testado no aparelho)**
-2. Botões de manutenção para Ajustes > Avançado — pendente
-3. Mensagens de sincronização só em caso de erro — pendente
-4. Biblioteca limpa (Playlists e Músicas, busca em cima, filtros atrás de botão) — pendente
-5. Linhas de música simples — pendente
-6. Primeira conexão mais curta — pendente
-7. "No aparelho" dentro da Biblioteca/Ajustes; barra com 4 abas — pendente
-8. Início com "continuar ouvindo" e playlists — pendente
-9. Funcionar sem internet — pendente
+2. Botões de manutenção para Ajustes > Avançado — **FEITO (código escrito, ainda não compilado pelo Actions nem testado no aparelho)**
+3. Mensagens de sincronização só em caso de erro — **FEITO (código escrito, ainda não compilado pelo Actions nem testado no aparelho)**
+4. Biblioteca limpa (Playlists e Músicas, busca em cima, filtros atrás de botão) — **FEITO (código escrito, ainda não compilado pelo Actions nem testado no aparelho)**
+5. Linhas de música simples — **FEITO (código escrito, ainda não compilado pelo Actions nem testado no aparelho)**
+6. Primeira conexão mais curta — **FEITO (código escrito, ainda não compilado pelo Actions nem testado no aparelho)**
+7. "No aparelho" dentro da Biblioteca/Ajustes; barra com 4 abas — **FEITO (código escrito, ainda não compilado pelo Actions nem testado no aparelho)**
+8. Início com "continuar ouvindo" e playlists — **FEITO (código escrito, ainda não compilado pelo Actions nem testado no aparelho)**
+9. Funcionar sem internet — **FEITO (código escrito, ainda não compilado pelo Actions nem testado no aparelho)**
 Regras: não mudar cores nem o estilo de vidro; não mudar o formato do `toxic-playlists` v2.
 
 ### Item 1 — notificação de conta caída
@@ -57,3 +57,14 @@ Regras: não mudar cores nem o estilo de vidro; não mudar o formato do `toxic-p
 - A tela de consentimento do Google continua em `CloudAuthEffect` (Screens.kt), que já vale em todas as abas.
 - **Não validado:** compilação (sem Android SDK aqui), toque na notificação num aparelho real, Android 13+ pedindo permissão.
 
+### Itens 2 a 9 — o que mudou (tudo em código escrito, NÃO compilado, NÃO testado no aparelho)
+- **Barra de baixo com 4 abas** (Início, Buscar, Biblioteca, Ajustes). "No aparelho" virou Ajustes > "Músicas do aparelho" (página 5 de `SettingsScreen`; a permissão de música só é pedida ali). O botão "No aparelho" do aviso de "sem internet" abre direto essa página (`settingsStart = 5`).
+- **Ajustes** (`ui/SettingsScreen.kt`): Conta do Google, Áudio e equalizador, Músicas do aparelho, Atualização do app, Privacidade e a seção **AVANÇADO** > "Sincronização e armazenamento" (`CloudSettings(vm, advanced = true)`): Sincronizar, Atualizar biblioteca, Sincronizar playlists do Drive, Importar playlists (.json), cartão de resultado das playlists, cache, downloads e teste de streaming. A página "Conta do Google" ficou só com o cartão da conta, Trocar conta e Desconectar.
+- **Mensagens** (`CloudManager.doSync`): sucesso não gera mais mensagem ("+3 novas", "Biblioteca já está em dia" somem). Só erros. Erro de "sem internet" durante a sincronização não vira mensagem (o aviso leve de rede cobre). `SmartInfoCard` (resultado das playlists do Drive) só aparece em Avançado. O Início não tem mais "Sincronizando sua biblioteca..." nem botão "Biblioteca".
+- **Biblioteca** (`ui/PlaylistsScreen.kt`, `ui/CloudScreen.kt`): só "Playlists" e "Músicas"; busca no topo (playlists: filtra por nome; músicas: `cloud.query`); botão pequeno (ícone Tune, acende quando há filtro) abre `FiltersDialog` (Ver por, Ordem, Mostrar, Formato). Playlists: um botão "Nova playlist" com menu (vazia / por intenção). Sem os botões Sincronizar, Importar .json.
+- **Linha de música** (`CloudTrackRow`): capa, título, artista, coração, menu. Sem formato, tamanho, "nuvem/cache/streaming". Só aparece o anel de progresso enquanto baixa.
+- **Primeira conexão** (`ConnectCard`): uma frase, botão "Entrar com o Google" e uma linha pequena "Só leitura. Você sai quando quiser."
+- **Início** (`ui/CloudHome.kt`): saudação, "Continuar ouvindo" (música atual retoma de onde parou + últimas ouvidas pelo histórico `vm.history`), "Suas playlists", depois atalhos, mixes, recentes, artistas, gêneros.
+- **Sem internet** (`CloudManager.online`, `ConnectivityManager.registerDefaultNetworkCallback`): faixa leve "Sem internet. Mostrando o que está salvo no aparelho." com atalho "No aparelho"; Início, Buscar e Biblioteca > Músicas mostram só músicas baixadas; a sincronização automática não roda sem rede e roda quando a rede volta (se passaram 6 h). Músicas de playlists que não foram baixadas ainda tentam tocar e mostram o erro de rede de sempre.
+- **Não mudou:** cores, estilo de vidro, formato do `toxic-playlists` v2, testes automáticos existentes (nenhum deles toca a interface).
+- **Para validar:** build do Actions; login/reconexão; Ajustes > Avançado; filtros; modo avião (faixa de "sem internet" e lista só com baixadas); "Continuar ouvindo" retomando a posição.
