@@ -222,6 +222,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                         if (kind == CloudErrorKind.TOKEN_EXPIRED) {
                             CloudAuth.invalidateToken()             // força renovação silenciosa na próxima abertura
                             if (!tokenRetried) { tokenRetried = true; c.prepare(); return }
+                            cloud.notifyReconnectNeeded()           // a renovação silenciosa falhou: avisa para reconectar
                         }
                         if (CloudPlayback.isRecoverable(kind)) { pendingRetry = true; return }
                         if (c.hasNextMediaItem()) { c.seekToNextMediaItem(); c.prepare(); c.play() }

@@ -1,6 +1,8 @@
 # Changelog
 
 ## Não lançado
+### Adicionado (aviso de conta caída)
+- Notificação "Reconecte sua conta do Google" quando a conta do Drive cai ou o acesso é revogado (na sincronização ou durante a música). Tocar nela abre o app e a reconexão. A permissão de notificação só é pedida nesse momento, com explicação curta, uma vez. Código escrito; ainda não compilado pelo Actions nem testado no aparelho.
 ### Adicionado (playlists do motor)
 - O app lê também o `playlists-motor.json` (gerado pelo Toxic Music Engine, procurado em qualquer pasta do Drive) e junta com o `playlists-inteligentes.json` do site (`SmartMerge`). Nunca remove faixas escolhidas à mão e não recria playlist apagada pelo usuário. Testes em `SmartMergeTest`. Código escrito e testes unitários criados; ainda não validado no celular.
 ### Adicionado (velocidade)

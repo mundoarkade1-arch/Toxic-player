@@ -77,6 +77,26 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
     fun enterGroup(k: String?) { openGroup = k }
     fun dismissMessage() { message = null }
 
+    // ---------- aviso de conta caída (notificação) ----------
+    /** Verdadeiro quando o app deve mostrar a explicação curta antes de pedir a permissão de notificação. */
+    var askNotifPermission by mutableStateOf(false); private set
+    fun notifPermissionHandled(granted: Boolean) {
+        askNotifPermission = false
+        CloudAuthNotifier.markAsked(app)
+        if (granted && reconnectPending) CloudAuthNotifier.show(app)
+    }
+    @Volatile private var reconnectPending = false
+
+    /** A conta do Google caiu ou o acesso foi revogado: avisa por notificação (ou pede a permissão, uma vez). */
+    fun notifyReconnectNeeded() {
+        reconnectPending = true
+        if (CloudAuthNotifier.canNotify(app)) CloudAuthNotifier.show(app)
+        else if (CloudAuthNotifier.shouldAskPermission(app)) askNotifPermission = true
+    }
+
+    /** Usuário tocou na notificação: abre a reconexão. */
+    fun reconnectFromNotification() { if (!connecting) connect() }
+
     /** Acrescenta uma frase à mensagem atual (usado pelas playlists do Drive). */
     fun appendMessage(text: String) { message = message?.let { "$it $text" } ?: text }
 
@@ -175,6 +195,8 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
     }
 
     private suspend fun afterConnected() {
+        reconnectPending = false
+        CloudAuthNotifier.clear(app)
         withContext(Dispatchers.Main) { connected = true; connecting = false }
         loadAccount()
         doSync(full = true)
@@ -197,6 +219,8 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
         syncJob?.cancel(); downloadJobs.values.forEach { it.cancel() }; downloadJobs.clear()
         scope.launch(Dispatchers.IO) {
             val revoked = CloudAuth.disconnectBlocking()
+            reconnectPending = false
+            CloudAuthNotifier.clear(app)
             repo.clearAll()
             CloudStorage.clearAudioCache(); CloudStorage.clearCovers(); CloudStorage.clearOffline()
             prefs.edit().remove("acc_name").remove("acc_email").remove("acc_usage").remove("acc_limit").apply()
@@ -235,6 +259,8 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
         try {
             repo.requeueFailed()
             val r = repo.sync(full, { p -> progress = p }, { publish() })
+            reconnectPending = false
+            CloudAuthNotifier.clear(app)
             loadAccount()
             withContext(Dispatchers.Main) {
                 lastSyncMs = repo.lastSyncMs
@@ -247,6 +273,9 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
         } catch (e: Exception) {
             val kind = CloudErrors.classify(e)
             if (kind == CloudErrorKind.ACCESS_REVOKED || kind == CloudErrorKind.NOT_CONNECTED) CloudAuth.markDisconnected()
+            if (kind == CloudErrorKind.ACCESS_REVOKED || kind == CloudErrorKind.TOKEN_EXPIRED) {
+                withContext(Dispatchers.Main) { notifyReconnectNeeded() }
+            }
             fail(e, fallback = CloudErrorKind.SYNC_ERROR)
         } finally {
             withContext(Dispatchers.Main) { syncing = false; progress = SyncProgress.Idle; connected = CloudAuth.connected }

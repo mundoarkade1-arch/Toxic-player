@@ -35,3 +35,25 @@ Arquivos: `ui/Screens.kt` (App/NavBar), `ui/CloudScreen.kt` (Início/Buscar/Driv
 - Player: `DefaultLoadControl` (começa a tocar com 1 s de áudio, guarda até 2 min à frente).
 - Capas de playlist: mosaico de 4 capas / capa da primeira música; sem capa, degradê com símbolo.
 - Pré-carregamento FEITO: `CloudPlayback.prefetch` guarda 1 MB do começo das 2 próximas músicas (thread de prioridade mínima, espera 20 s de buffer à frente). Ideias futuras: cache de miniaturas em disco; Baseline Profile.
+
+## Plano "mais parecido com o Spotify" (9 itens, um por vez)
+1. Notificação de conta caída — **FEITO (código escrito, ainda não compilado pelo Actions nem testado no aparelho)**
+2. Botões de manutenção para Ajustes > Avançado — pendente
+3. Mensagens de sincronização só em caso de erro — pendente
+4. Biblioteca limpa (Playlists e Músicas, busca em cima, filtros atrás de botão) — pendente
+5. Linhas de música simples — pendente
+6. Primeira conexão mais curta — pendente
+7. "No aparelho" dentro da Biblioteca/Ajustes; barra com 4 abas — pendente
+8. Início com "continuar ouvindo" e playlists — pendente
+9. Funcionar sem internet — pendente
+Regras: não mudar cores nem o estilo de vidro; não mudar o formato do `toxic-playlists` v2.
+
+### Item 1 — notificação de conta caída
+- `cloud/CloudAuthNotifier.kt` (novo): cria e mostra a notificação "Reconecte sua conta do Google" (canal `toxic_account`), sem repetir enquanto a anterior não for resolvida; `clear` apaga e libera a próxima. Pede permissão só no Android 13+ e só uma vez.
+- `CloudManager`: `notifyReconnectNeeded()` (chamado quando a sincronização falha com ACCESS_REVOKED ou TOKEN_EXPIRED), `askNotifPermission`/`notifPermissionHandled`, `reconnectFromNotification()`. O aviso some ao reconectar, ao sincronizar com sucesso ou ao desconectar de propósito.
+- `PlayerViewModel`: avisa também quando a música para porque a sessão do Google expirou e a renovação silenciosa falhou.
+- `MainActivity`: `onNewIntent`/intent inicial com `toxic_reconnect` chama a reconexão; diálogo curto "Avisar se a conta cair?" antes de pedir `POST_NOTIFICATIONS`.
+- `AndroidManifest.xml`: `MainActivity` com `launchMode="singleTop"`.
+- A tela de consentimento do Google continua em `CloudAuthEffect` (Screens.kt), que já vale em todas as abas.
+- **Não validado:** compilação (sem Android SDK aqui), toque na notificação num aparelho real, Android 13+ pedindo permissão.
+
