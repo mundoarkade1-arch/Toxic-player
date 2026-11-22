@@ -224,6 +224,35 @@ class HomeLogicTest {
     private val l = listOf(ct("1", "Pitty", "Rock"), ct("2", "Pitty", "rock"), ct("3", "Henrique e Juliano", "Sertanejo"),
         ct("4", CloudTrack.UNKNOWN_ARTIST, ""))
 
+    // ---- capa com letras e tipo de playlist ----
+    @Test fun initialsUseFirstLettersOfTwoWords() {
+        assertEquals("SC", CloudHomeLogic.initials("Sertanejo Churrasco"))
+        assertEquals("T", CloudHomeLogic.initials("Treino"))
+        assertEquals("HJ", CloudHomeLogic.initials("Henrique e Juliano"))
+        assertEquals("LP", CloudHomeLogic.initials("  linkin   park "))
+        assertEquals("\u00C1B", CloudHomeLogic.initials("\u00E1gua Benta"))
+        assertEquals("2", CloudHomeLogic.initials("2026"))
+    }
+    @Test fun initialsHandleSymbolsAndEmpty() {
+        assertEquals("\u266A", CloudHomeLogic.initials(""))
+        assertEquals("\u266A", CloudHomeLogic.initials("!!! ???"))
+        assertEquals("E", CloudHomeLogic.initials("e"))
+        assertEquals("M", CloudHomeLogic.initials("\u2605 Mix"))
+    }
+    @Test fun playlistKindFollowsOrigin() {
+        assertEquals(CloudHomeLogic.KIND_FAV, CloudHomeLogic.playlistKind(true, "Pasta"))
+        assertEquals(CloudHomeLogic.KIND_FOLDER, CloudHomeLogic.playlistKind(false, "Pasta"))
+        assertEquals(CloudHomeLogic.KIND_FOLDER, CloudHomeLogic.playlistKind(false, " pasta "))
+        assertEquals(CloudHomeLogic.KIND_ARTIST, CloudHomeLogic.playlistKind(false, "Cantor"))
+        assertEquals(CloudHomeLogic.KIND_MOTOR, CloudHomeLogic.playlistKind(false, "Motor"))
+        assertEquals(CloudHomeLogic.KIND_MINE, CloudHomeLogic.playlistKind(false, null))
+        assertEquals(CloudHomeLogic.KIND_MINE, CloudHomeLogic.playlistKind(false, "Top 200"))
+    }
+    @Test fun playlistKindsAreInDisplayOrder() {
+        val order = listOf(CloudHomeLogic.KIND_FAV, CloudHomeLogic.KIND_MINE, CloudHomeLogic.KIND_FOLDER, CloudHomeLogic.KIND_MOTOR, CloudHomeLogic.KIND_ARTIST)
+        assertEquals(order.sorted(), order)
+    }
+
     @Test fun greetingByHour() {
         assertEquals("Bom dia", CloudHomeLogic.greeting(8)); assertEquals("Boa tarde", CloudHomeLogic.greeting(15)); assertEquals("Boa noite", CloudHomeLogic.greeting(23))
         assertEquals("Boa noite", CloudHomeLogic.greeting(2))

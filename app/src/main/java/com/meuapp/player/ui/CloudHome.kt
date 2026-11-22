@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.meuapp.player.Folder
 import com.meuapp.player.PlayerViewModel
 import com.meuapp.player.cloud.CloudHomeLogic
 import com.meuapp.player.cloud.CloudManager
@@ -125,6 +126,7 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
             }
         }
         val myLists = vm.groups(3).filter { it.count > 0 }
+            .sortedWith(compareBy<Folder>({ vm.playlistKind(it.name) }, { it.name.lowercase() }))
         if (myLists.isNotEmpty()) {
             item { Section("Suas playlists") }
             item {
@@ -136,7 +138,7 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
                         }) {
                             PlaylistCover(vm, g.name, Modifier.size(140.dp), 48.dp)
                             Text(g.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-                            Text(plural(g.count), fontSize = 11.sp, color = Neon.Dim)
+                            Text(plural(g.count) + kindSuffix(vm.playlistKind(g.name)), fontSize = 11.sp, color = Neon.Dim)
                         }
                     }
                 }

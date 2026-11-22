@@ -31,4 +31,35 @@ object CloudHomeLogic {
 
     /** Matiz (0..360) estável para um nome, para colorir cartões. */
     fun hueOf(name: String): Float = ((name.hashCode().toLong() and 0x7FFFFFFF) % 360).toFloat()
+
+    private val FILLER_WORDS = setOf("e", "de", "da", "do", "das", "dos", "a", "o", "x", "the", "and")
+
+    /** Letras da capa quando a playlist não tem imagem: iniciais das duas primeiras palavras ("Sertanejo Churrasco" vira "SC"). */
+    fun initials(name: String): String {
+        val all = name.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotEmpty() }
+        val words = all.filter { it.lowercase() !in FILLER_WORDS }.ifEmpty { all }
+        return when {
+            words.isEmpty() -> "\u266A"
+            words.size == 1 -> words[0].take(1).uppercase()
+            else -> (words[0].take(1) + words[1].take(1)).uppercase()
+        }
+    }
+
+    // Tipos de playlist, já na ordem em que aparecem nas telas.
+    const val KIND_FAV = 0
+    const val KIND_MINE = 1
+    const val KIND_FOLDER = 2
+    const val KIND_MOTOR = 3
+    const val KIND_ARTIST = 4
+
+    /** Tipo da playlist pela origem que o site/motor gravou no arquivo ("Pasta", "Cantor", "Motor"). Sem origem: criada no app. */
+    fun playlistKind(isFavorites: Boolean, origin: String?): Int {
+        if (isFavorites) return KIND_FAV
+        return when (origin?.trim()?.lowercase()) {
+            "pasta" -> KIND_FOLDER
+            "cantor" -> KIND_ARTIST
+            "motor" -> KIND_MOTOR
+            else -> KIND_MINE
+        }
+    }
 }

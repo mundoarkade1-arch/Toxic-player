@@ -263,9 +263,9 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
     fun switchAccount() = disconnect(thenReconnect = true)
 
     // ---------- sincronização ----------
-    /** Sincronização automática ao abrir o app: só se conectado e a última tiver mais de [CloudConfig.AUTO_SYNC_INTERVAL_MS]. */
+    /** Sincronização automática ao abrir o app ou voltar para ele: só se conectado, com a biblioteca já carregada e a última tiver mais de [CloudConfig.AUTO_SYNC_INTERVAL_MS]. */
     fun maybeAutoSync() {
-        if (!connected || syncing || !online) return
+        if (!indexLoaded || !connected || syncing || !online) return
         if (System.currentTimeMillis() - repo.lastSyncMs > CloudConfig.AUTO_SYNC_INTERVAL_MS) sync(full = false)
     }
 

@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meuapp.player.FAVORITES
+import com.meuapp.player.Folder
 import com.meuapp.player.PlayerViewModel
 import com.meuapp.player.cloud.CloudHomeLogic
 import kotlinx.coroutines.Dispatchers
@@ -69,7 +71,12 @@ internal fun PlaylistCover(vm: PlayerViewModel, name: String, modifier: Modifier
             .border(1.dp, Color.White.copy(alpha = 0.16f), shape),
         contentAlignment = Alignment.Center
     ) {
-        Icon(if (name == FAVORITES) Icons.Rounded.Favorite else Icons.Rounded.QueueMusic, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(iconSize))
+        if (name == FAVORITES) {
+            Icon(Icons.Rounded.Favorite, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(iconSize))
+        } else {
+            // Sem imagem: as letras do nome, para achar a playlist de relance.
+            Text(CloudHomeLogic.initials(name), fontSize = (iconSize.value * 1.1f).sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.92f))
+        }
     }
 }
 
@@ -114,6 +121,7 @@ private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit, query: S
     var intentDialog by remember { mutableStateOf(false) }
     var intentText by remember { mutableStateOf("") }
     var intentResult by remember { mutableStateOf<String?>(null) }
+    var kindFilter by remember { mutableIntStateOf(-1) }
     BackHandler(enabled = open != null) { onOpen(null) }
 
     val current = open
@@ -122,8 +130,18 @@ private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit, query: S
         return
     }
 
-    val all = vm.groups(3)
-    val groups = if (query.isBlank()) all else all.filter { it.name.contains(query.trim(), ignoreCase = true) }
+    // Ordem: curtidas, minhas, pastas, motor, cantores (e por nome dentro de cada tipo). Filtros por tipo logo acima da lista.
+    val all = vm.groups(3).sortedWith(compareBy<Folder>({ vm.playlistKind(it.name) }, { it.name.lowercase() }))
+    val kindOf = all.associate { it.name to vm.playlistKind(it.name) }
+    val chips = KIND_CHIPS.map { (k, label) ->
+        Triple(k, label, kindOf.values.count { it == k || (k == CloudHomeLogic.KIND_MINE && it == CloudHomeLogic.KIND_FAV) })
+    }.filter { it.third > 0 }
+    val activeKind = if (chips.any { it.first == kindFilter }) kindFilter else -1
+    val groups = all.filter { g ->
+        val k = kindOf[g.name] ?: CloudHomeLogic.KIND_MINE
+        val kindOk = activeKind < 0 || k == activeKind || (activeKind == CloudHomeLogic.KIND_MINE && k == CloudHomeLogic.KIND_FAV)
+        kindOk && (query.isBlank() || g.name.contains(query.trim(), ignoreCase = true))
+    }
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
         item {
             Box {
@@ -132,6 +150,12 @@ private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit, query: S
                     DropdownMenuItem(text = { Text("Playlist vazia") }, onClick = { plusMenu = false; newDialog = true })
                     DropdownMenuItem(text = { Text("Por intenção (inteligente)") }, onClick = { plusMenu = false; intentDialog = true })
                 }
+            }
+        }
+        if (chips.size > 1) item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { KindChip("Todas · ${all.size}", activeKind < 0) { kindFilter = -1 } }
+                items(chips) { (k, label, n) -> KindChip("$label · $n", activeKind == k) { kindFilter = if (activeKind == k) -1 else k } }
             }
         }
         if (groups.isEmpty()) item {
@@ -145,7 +169,7 @@ private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit, query: S
                     Column(Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).clickable { onOpen(name) }) {
                         PlaylistCover(vm, name, Modifier.fillMaxWidth().aspectRatio(1f), 52.dp)
                         Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-                        Text(plural(g.count), fontSize = 11.sp, color = Neon.Dim)
+                        Text(plural(g.count) + kindSuffix(kindOf[name] ?: CloudHomeLogic.KIND_MINE), fontSize = 11.sp, color = Neon.Dim)
                     }
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -196,4 +220,33 @@ private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit, query: S
             confirmButton = { TextButton(onClick = { intentResult = null }) { Text("Fechar", color = Neon.Green, fontWeight = FontWeight.Bold) } }
         )
     }
+}
+
+private val KIND_CHIPS = listOf(
+    CloudHomeLogic.KIND_MINE to "Minhas",
+    CloudHomeLogic.KIND_FOLDER to "Pastas",
+    CloudHomeLogic.KIND_MOTOR to "Motor",
+    CloudHomeLogic.KIND_ARTIST to "Cantores"
+)
+
+/** Complemento do rótulo do cartão: de onde vem a playlist (as criadas por você ficam sem complemento). */
+internal fun kindSuffix(kind: Int): String = when (kind) {
+    CloudHomeLogic.KIND_FOLDER -> " \u00B7 pasta"
+    CloudHomeLogic.KIND_ARTIST -> " \u00B7 cantor"
+    CloudHomeLogic.KIND_MOTOR -> " \u00B7 motor"
+    else -> ""
+}
+
+@Composable
+private fun KindChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(50)
+    Text(
+        label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+        color = if (selected) Neon.OnGreen else Color.White,
+        modifier = Modifier.clip(shape)
+            .background(if (selected) Neon.Green else Neon.Glass)
+            .border(1.dp, if (selected) Neon.Green else Neon.Border, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    )
 }

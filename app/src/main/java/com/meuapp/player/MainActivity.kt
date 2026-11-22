@@ -33,6 +33,11 @@ class MainActivity : ComponentActivity() {
     /** Sobe a cada toque na notificação "Reconecte sua conta do Google". */
     private var reconnectRequest by mutableIntStateOf(0)
 
+    override fun onStart() {
+        super.onStart()
+        vmRef?.cloud?.maybeAutoSync()   // voltou para o app: busca músicas e playlists novas em segundo plano
+    }
+
     override fun onStop() {
         vmRef?.savePos()   // guarda faixa e ponto atual para continuar depois
         super.onStop()

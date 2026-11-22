@@ -47,6 +47,20 @@ class SmartPlaylistManager(
             .putString("modified", driveModified).apply()
     }
 
+    private var originsStamp = 0
+    private var originsCache: Map<String, String> = emptyMap()
+
+    /** Nome da playlist (pela chave de SmartMatcher) -> origem gravada no arquivo ("Pasta", "Cantor", "Motor"...). Só leitura. */
+    fun origins(): Map<String, String> {
+        val raw = prefs.getString("file", null) ?: return emptyMap()
+        val h = raw.hashCode()
+        if (h != originsStamp) {
+            originsStamp = h
+            originsCache = storedFile()?.playlists?.associate { SmartMatcher.key(it.name) to it.origin } ?: emptyMap()
+        }
+        return originsCache
+    }
+
     private fun added() = SmartState.addedFromJson(prefs.getString("added", null))
     private fun dismissed() = SmartState.namesFromJson(prefs.getString("dismissed", null))
 

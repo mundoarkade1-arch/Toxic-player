@@ -22,8 +22,8 @@ object CloudConfig {
     const val READ_TIMEOUT_MS = 30_000
     const val MAX_RETRIES = 4
 
-    /** Resincroniza ao abrir o app apenas se a última sincronização for mais antiga que isto. */
-    const val AUTO_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000L
+    /** Resincroniza ao abrir o app (ou voltar para ele) apenas se a última sincronização for mais antiga que isto. */
+    const val AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000L
 
     /** Quantas leituras parciais (metadados) rodam ao mesmo tempo. Baixo de propósito: respeita a cota da API. */
     const val ENRICH_PARALLELISM = 3

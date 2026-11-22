@@ -32,10 +32,12 @@ import com.meuapp.player.audio.PlaybackService
 import com.meuapp.player.cloud.CloudAuth
 import com.meuapp.player.cloud.CloudConfig
 import com.meuapp.player.cloud.CloudErrorKind
+import com.meuapp.player.cloud.CloudHomeLogic
 import com.meuapp.player.cloud.CloudManager
 import com.meuapp.player.cloud.CloudPlayback
 import com.meuapp.player.cloud.DriveApi
 import com.meuapp.player.cloud.SmartInfo
+import com.meuapp.player.cloud.SmartMatcher
 import com.meuapp.player.cloud.SmartPlaylistManager
 import com.meuapp.player.taste.Candidate
 import com.meuapp.player.taste.ContextualPlaylistGenerator
@@ -128,6 +130,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissTips() { showTips = false; prefs.edit().putBoolean("tips_seen", true).apply() }
 
     // ---------- Biblioteca ----------
+    /** Tipo da playlist (curtidas, minhas, pasta, motor, cantor) para organizar as telas. Ver [CloudHomeLogic.playlistKind]. */
+    fun playlistKind(name: String): Int =
+        CloudHomeLogic.playlistKind(name == FAVORITES, smart.origins()[SmartMatcher.key(name)])
+
     fun groups(mode: Int): List<Folder> {
         if (mode == 3) {
             return playlists.map { (k, v) -> Folder("P:$k", k, v.size) }
