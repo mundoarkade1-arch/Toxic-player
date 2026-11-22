@@ -25,6 +25,14 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 **(Texto antigo, já feito acima) Falta (telas, só com autorização):** botão "Importar playlists (.json)" ao lado do M3U (`ui/Screens.kt`, ~linha 422), botão "Sincronizar playlists do Drive" e o retorno destacado ("3 playlists atualizadas, +27 faixas, 4 não encontradas" + lista das não encontradas, que já está em `vm.smart.lastReport`). Hoje o resultado aparece na mensagem da aba Cloud.
 **Não validado:** build no Actions, leitura real do Drive, aparelho.
 
+## Pastas do Drive viram playlists — código escrito, NÃO compilado, NÃO testado no aparelho (2026-11-21)
+- `cloud/FolderPlaylists.kt` (novo, lógica pura): cada pasta com música direto dentro vira uma `SmartPlaylist` com origem "Pasta" (nome = nome da pasta; nome repetido em outro lugar = caminho "A / B"; raiz do Drive e músicas soltas ignoradas; subpasta não junta na pasta de cima).
+- `SmartPlaylistManager`: `withFolders` junta (`SmartMerge`) o arquivo do site/motor com as pastas, antes de aplicar. Roda ao abrir o app e depois de cada sincronização; vale mesmo sem arquivo no Drive. `origins()` e `forget()` também conhecem as playlists de pasta (para o Início marcar como pasta e para playlist apagada não voltar). A assinatura que pula a conta agora inclui os caminhos das pastas (renomear pasta refaz a conta).
+- Tela: nenhuma mudança. O Início já lista todas as playlists em "Suas playlists" (`ui/CloudHome.kt`), as de pasta aparecem com a marca de pasta.
+- Regras mantidas: nunca remove faixa; faixa tirada pelo usuário não volta; playlist apagada não é recriada. Limites conhecidos: pasta renomeada gera playlist nova (a antiga fica); música movida de pasta continua na playlist antiga.
+- Testes: `app/src/test/.../cloud/FolderPlaylistsTest.kt` (7 testes, ainda não rodaram).
+- Para validar: Actions verde; Início mostrando as pastas; pasta nova e música nova aparecendo depois de sincronizar; apagar uma playlist de pasta e ela não voltar.
+
 ## Nova navegação estilo Spotify (etapa 1) — código escrito, ainda não compilado pelo Actions
 Abas: **Início** (playlists, mixes, descubra), **Buscar** (procura no Drive; menu da música guarda em playlist), **Biblioteca** (Playlists com capas genéricas + Músicas do Drive), **No aparelho** (músicas do celular; permissão só aqui), **Ajustes** (Conta e sincronização, Áudio e equalizador, Atualização do app). O player fica recolhido (mini player) e só abre ao tocar nele; a fila é restaurada na última música.
 Arquivos: `ui/Screens.kt` (App/NavBar), `ui/CloudScreen.kt` (Início/Buscar/DriveSongs/CloudSettings), `ui/PlaylistsScreen.kt` (LibraryHub, capas), `ui/SettingsScreen.kt`, `ui/CloudHome.kt` (seção "Suas playlists").
