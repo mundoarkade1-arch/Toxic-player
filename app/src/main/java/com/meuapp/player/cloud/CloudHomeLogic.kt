@@ -32,6 +32,19 @@ object CloudHomeLogic {
     /** Matiz (0..360) estável para um nome, para colorir cartões. */
     fun hueOf(name: String): Float = ((name.hashCode().toLong() and 0x7FFFFFFF) % 360).toFloat()
 
+    /**
+     * Gênero pela pasta do Drive, para músicas sem gênero nas tags.
+     * "Músicas/Artistas/Sertanejo/Gusttavo Lima" vira "Sertanejo": é a pasta logo depois de "Artistas",
+     * mas só quando ainda existe a pasta do cantor dentro dela. Música direto em "Artistas/Cantor" não tem gênero.
+     */
+    fun genreFromPath(path: String?): String {
+        if (path.isNullOrBlank()) return ""
+        val parts = path.split('/').map { it.trim() }.filter { it.isNotEmpty() }
+        val i = parts.indexOfFirst { CloudLibrary.normalize(it) == "artistas" }
+        if (i < 0 || parts.size - i < 3) return ""
+        return parts[i + 1]
+    }
+
     private val FILLER_WORDS = setOf("e", "de", "da", "do", "das", "dos", "a", "o", "x", "the", "and")
 
     /** Letras da capa quando a playlist não tem imagem: iniciais das duas primeiras palavras ("Sertanejo Churrasco" vira "SC"). */

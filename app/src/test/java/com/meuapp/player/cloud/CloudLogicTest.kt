@@ -248,6 +248,19 @@ class HomeLogicTest {
         assertEquals(CloudHomeLogic.KIND_MINE, CloudHomeLogic.playlistKind(false, null))
         assertEquals(CloudHomeLogic.KIND_MINE, CloudHomeLogic.playlistKind(false, "Top 200"))
     }
+    @Test fun genreFromFolderUnderArtistas() {
+        assertEquals("Sertanejo", CloudHomeLogic.genreFromPath("M\u00FAsicas do Site/M\u00FAsicas/Artistas/Sertanejo/Gusttavo Lima"))
+        assertEquals("Rock", CloudHomeLogic.genreFromPath("Musicas/artistas/Rock/Linkin Park/Meteora"))
+        assertEquals("Funk", CloudHomeLogic.genreFromPath("ARTISTAS/Funk/MC Ryan SP"))
+    }
+    @Test fun noGenreWhenFolderIsTheArtistOrOutsideArtistas() {
+        assertEquals("", CloudHomeLogic.genreFromPath("M\u00FAsicas/Artistas/Gusttavo Lima"))
+        assertEquals("", CloudHomeLogic.genreFromPath("M\u00FAsicas/Artistas"))
+        assertEquals("", CloudHomeLogic.genreFromPath("M\u00FAsicas/Playlists/Churrasco"))
+        assertEquals("", CloudHomeLogic.genreFromPath("Meu Drive"))
+        assertEquals("", CloudHomeLogic.genreFromPath(""))
+        assertEquals("", CloudHomeLogic.genreFromPath(null))
+    }
     @Test fun playlistKindsAreInDisplayOrder() {
         val order = listOf(CloudHomeLogic.KIND_FAV, CloudHomeLogic.KIND_MINE, CloudHomeLogic.KIND_FOLDER, CloudHomeLogic.KIND_MOTOR, CloudHomeLogic.KIND_ARTIST)
         assertEquals(order.sorted(), order)

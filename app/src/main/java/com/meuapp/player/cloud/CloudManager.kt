@@ -149,9 +149,16 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
         }
     }
 
-    private fun applyTracks(l: List<CloudTrack>) {
+    private fun applyTracks(l0: List<CloudTrack>) {
+        val paths = repo.pathsFor(l0)
+        // Música sem gênero nas tags: usa a pasta ("Artistas/Sertanejo/Cantor/..." vira "Sertanejo").
+        // Só na memória: o índice guardado no aparelho não muda.
+        val l = l0.map { t ->
+            if (t.genre.isNotBlank()) t
+            else CloudHomeLogic.genreFromPath(paths[t.parentId]).let { g -> if (g.isEmpty()) t else t.copy(genre = g) }
+        }
         tracks = l
-        folderPaths = repo.pathsFor(l)
+        folderPaths = paths
         byId = l.associateBy { it.id }
         val pt = l.map(::toTrack)
         playerTracks = pt
