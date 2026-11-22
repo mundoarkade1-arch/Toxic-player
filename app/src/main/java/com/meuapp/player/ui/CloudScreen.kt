@@ -94,7 +94,7 @@ fun CloudScreen(vm: PlayerViewModel, goPlayer: () -> Unit, mode: CloudMode = Clo
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp)) {
             if (!cloud.connected) ConnectCard(cloud)
             else if (mode == CloudMode.SEARCH) CloudSearch(vm, cloud, goPlayer)
-            else CloudHome(vm, cloud, goPlayer, onDevice) { view, key -> cloud.changeView(view); cloud.enterGroup(key); onNav(2) }
+            else CloudHome(vm, cloud, goPlayer, onDevice, onOpenPlaylist = { name -> cloud.enterGroup(null); vm.openPlaylistRequest = name; onNav(2) }) { view, key -> cloud.changeView(view); cloud.enterGroup(key); onNav(2) }
         }
     }
 }

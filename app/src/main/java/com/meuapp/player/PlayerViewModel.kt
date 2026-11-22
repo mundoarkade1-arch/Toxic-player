@@ -69,6 +69,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val playlists = mutableStateMapOf<String, List<Long>>()
     /** Último resultado das playlists do Drive, mostrado em destaque nas telas até o usuário fechar. */
     var smartInfo by mutableStateOf<SmartInfo?>(null); private set
+    /** Pedido do Início: abrir esta playlist na Biblioteca. A Biblioteca lê uma vez e limpa. Não é estado do Compose de propósito. */
+    @Volatile var openPlaylistRequest: String? = null
     fun dismissSmartInfo() { smartInfo = null }
 
     // Biblioteca

@@ -1,6 +1,9 @@
 # Changelog
 
 ## Não lançado
+### Alterado (Início: abrir a playlist em vez de tocar)
+- Tocar numa playlist no Início (cartões de "Suas playlists" e os 3 atalhos de playlist) agora abre a playlist na Biblioteca, com "Tocar tudo", "Aleatório" e a lista de músicas para escolher. Antes ela saía tocando.
+- Removido o bloco "Continuar ouvindo" do Início: o mini player já guarda a última música. Arquivos: `ui/CloudHome.kt`, `ui/CloudScreen.kt`, `ui/PlaylistsScreen.kt`, `PlayerViewModel.kt` (`openPlaylistRequest`). Código escrito; ainda não compilado pelo Actions nem testado no aparelho.
 ### Adicionado (pastas do Drive viram playlists)
 - Cada pasta do Drive que tem música direto dentro vira uma playlist com o nome da pasta, e aparece em "Suas playlists" no Início (marcada como pasta). Pasta nova, música nova na pasta e pasta renomeada entram sozinhas depois de cada sincronização. Vale também sem o arquivo de playlists do site. Duas pastas com o mesmo nome em lugares diferentes ficam com o caminho no nome ("Música / Rock"). Música em subpasta fica só na playlist da subpasta. Nunca remove faixa, respeita o que o usuário tirou e não recria playlist apagada (mesma regra das playlists do site). Pasta renomeada cria uma playlist nova; a antiga continua até o usuário apagar. Código novo em `cloud/FolderPlaylists.kt`, ligação em `SmartPlaylistManager`; testes em `FolderPlaylistsTest`. Código escrito; ainda não compilado pelo Actions nem testado no aparelho.
 ### Alterado (app mais parecido com o Spotify, itens 2 a 9)

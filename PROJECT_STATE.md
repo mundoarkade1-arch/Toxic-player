@@ -25,6 +25,13 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 **(Texto antigo, já feito acima) Falta (telas, só com autorização):** botão "Importar playlists (.json)" ao lado do M3U (`ui/Screens.kt`, ~linha 422), botão "Sincronizar playlists do Drive" e o retorno destacado ("3 playlists atualizadas, +27 faixas, 4 não encontradas" + lista das não encontradas, que já está em `vm.smart.lastReport`). Hoje o resultado aparece na mensagem da aba Cloud.
 **Não validado:** build no Actions, leitura real do Drive, aparelho.
 
+## Início abre a playlist (2026-11-22) — código escrito, NÃO compilado, NÃO testado no aparelho
+- Tocar numa playlist no Início chama `onOpenPlaylist` (`ui/CloudHome.kt`): `CloudScreen` guarda o nome em `vm.openPlaylistRequest`, limpa o grupo aberto e troca para a aba Biblioteca. `LibraryHub` (`ui/PlaylistsScreen.kt`) lê o pedido uma vez e abre direto na playlist (tela `TrackList`: Tocar tudo, Aleatório, músicas).
+- Os atalhos de playlist (até 3) também abrem a playlist. "Músicas curtidas", "Adicionadas recentemente" e "Aleatório" continuam tocando direto.
+- O bloco "Continuar ouvindo" saiu do Início (o item 8 do plano acima não vale mais nesse ponto). O mini player continua guardando a última música.
+- O botão voltar do celular, dentro da playlist, volta para a lista de playlists da Biblioteca (não para o Início).
+- Para validar: tocar numa playlist no Início abre a lista; "Tocar tudo" toca; escolher uma música toca ela; o Início não mostra "Continuar ouvindo".
+
 ## Pastas do Drive viram playlists — código escrito, NÃO compilado, NÃO testado no aparelho (2026-11-21)
 - `cloud/FolderPlaylists.kt` (novo, lógica pura): cada pasta com música direto dentro vira uma `SmartPlaylist` com origem "Pasta" (nome = nome da pasta; nome repetido em outro lugar = caminho "A / B"; raiz do Drive e músicas soltas ignoradas; subpasta não junta na pasta de cima).
 - `SmartPlaylistManager`: `withFolders` junta (`SmartMerge`) o arquivo do site/motor com as pastas, antes de aplicar. Roda ao abrir o app e depois de cada sincronização; vale mesmo sem arquivo no Drive. `origins()` e `forget()` também conhecem as playlists de pasta (para o Início marcar como pasta e para playlist apagada não voltar). A assinatura que pula a conta agora inclui os caminhos das pastas (renomear pasta refaz a conta).

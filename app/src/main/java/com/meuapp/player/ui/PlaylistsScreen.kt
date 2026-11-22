@@ -84,8 +84,10 @@ internal fun PlaylistCover(vm: PlayerViewModel, name: String, modifier: Modifier
 @Composable
 fun LibraryHub(vm: PlayerViewModel, goPlayer: () -> Unit) {
     val cloud = vm.cloud
-    var section by remember { mutableIntStateOf(if (cloud.openGroup != null) 1 else 0) }
-    var openPlaylist by remember { mutableStateOf<String?>(null) }
+    // Se o Início pediu uma playlist, a Biblioteca já abre dentro dela (lê o pedido uma vez e limpa).
+    val requested = remember { vm.openPlaylistRequest.also { vm.openPlaylistRequest = null } }
+    var section by remember { mutableIntStateOf(if (requested == null && cloud.openGroup != null) 1 else 0) }
+    var openPlaylist by remember { mutableStateOf<String?>(requested) }
     var playlistQuery by remember { mutableStateOf("") }
     var showFilters by remember { mutableStateOf(false) }
     BackHandler(enabled = section == 1 && cloud.openGroup != null) { cloud.enterGroup(null) }

@@ -55,9 +55,10 @@ private fun gradient(hue: Float) = Brush.linearGradient(listOf(Color.hsv(hue, 0.
 /**
  * Tela inicial do Toxic Cloud: saudação, atalhos, carrosséis e mixes gerados da biblioteca do próprio usuário.
  * [onOpen] abre uma lista na aba Biblioteca (view: 1 artistas, 3 gêneros; key: "A:nome" / "G:nome").
+ * [onOpenPlaylist] abre uma playlist na Biblioteca (com "Tocar tudo" e as músicas); tocar a playlist inteira é escolha do usuário lá dentro.
  */
 @Composable
-fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, onDevice: () -> Unit, onOpen: (Int, String) -> Unit) {
+fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, onDevice: () -> Unit, onOpenPlaylist: (String) -> Unit, onOpen: (Int, String) -> Unit) {
     // Sem internet, o Início mostra só o que está salvo no aparelho.
     val all = if (cloud.online) cloud.tracks else cloud.tracks.filter { it.id in cloud.offlineIds }
     val seed = remember { System.currentTimeMillis() / 86_400_000L }
@@ -76,18 +77,6 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
         }
         out
     }
-    // Continuar ouvindo: a música atual (retoma de onde parou) e as últimas que você ouviu.
-    val currentId = vm.currentTrack?.cloudId
-    val resume = remember(all, currentId) {
-        val byId = all.associateBy { it.id }
-        val out = ArrayList<CloudTrack>()
-        currentId?.let { id -> byId[id]?.let { out += it } }
-        vm.history.entriesByKey().values
-            .filter { it.key.startsWith("c:") && it.lastPlayedAt > 0L }
-            .sortedByDescending { it.lastPlayedAt }
-            .forEach { e -> val t = byId[e.key.removePrefix("c:")]; if (t != null && out.none { it.id == t.id }) out += t }
-        out.take(12)
-    }
     val favs = all.filter { vm.isFav(it.numericId) }
     val lists = vm.playlists.keys.sorted()
 
@@ -102,9 +91,7 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
     shortcuts += Triple("Adicionadas recentemente", Icons.Rounded.Schedule, { play(CloudHomeLogic.recent(all, 100)) })
     shortcuts += Triple("Aleatório", Icons.Rounded.Shuffle, { play(CloudHomeLogic.shuffled(all, System.nanoTime(), 100)) })
     lists.take(3).forEach { n ->
-        shortcuts += Triple(n, Icons.Rounded.LibraryMusic, {
-            play((vm.playlists[n] ?: emptyList()).mapNotNull { id -> cloud.trackByNumericId(id) }.mapNotNull { cloud.cloudTrack(it.cloudId ?: "") })
-        })
+        shortcuts += Triple(n, Icons.Rounded.LibraryMusic, { onOpenPlaylist(n) })
     }
 
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
@@ -115,16 +102,6 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
             }
         }
         cloud.message?.let { m -> item { MessageCard(m) { cloud.dismissMessage() } } }
-        if (resume.isNotEmpty()) {
-            item { Section("Continuar ouvindo") }
-            item {
-                TrackRow(cloud, resume) { i ->
-                    // A primeira é a música atual: só retoma de onde parou.
-                    if (i == 0 && currentId != null && resume[0].id == currentId) { if (!vm.isPlaying) vm.toggle(); goPlayer() }
-                    else play(resume, i)
-                }
-            }
-        }
         val myLists = vm.groups(3).filter { it.count > 0 }
             .sortedWith(compareBy<Folder>({ vm.playlistKind(it.name) }, { it.name.lowercase() }))
         if (myLists.isNotEmpty()) {
@@ -132,10 +109,7 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(myLists, key = { it.path }) { g ->
-                        Column(Modifier.width(140.dp).clip(RoundedCornerShape(20.dp)).clickable {
-                            val l = vm.tracksIn(g.path)
-                            if (l.isNotEmpty()) { vm.playList(l, 0); goPlayer() }
-                        }) {
+                        Column(Modifier.width(140.dp).clip(RoundedCornerShape(20.dp)).clickable { onOpenPlaylist(g.name) }) {
                             PlaylistCover(vm, g.name, Modifier.size(140.dp), 48.dp)
                             Text(g.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
                             Text(plural(g.count) + kindSuffix(vm.playlistKind(g.name)), fontSize = 11.sp, color = Neon.Dim)
