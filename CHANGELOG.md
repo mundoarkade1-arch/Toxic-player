@@ -1,6 +1,10 @@
 # Changelog
 
 ## Não lançado
+### Alterado (só as pastas viram playlist)
+- As playlists do app agora vêm SÓ das pastas do Drive (nome da pasta = nome da playlist). Os arquivos de playlists do site e do motor não são mais lidos, porque criavam playlists de 1 ou 2 músicas. Pasta com menos de 5 músicas não vira playlist (`FolderPlaylists.MIN_TRACKS`).
+- Limpeza única: as playlists que esses arquivos já tinham criado são apagadas do app se só tiverem músicas postas pelo app (se você pôs uma música à mão, a playlist fica) e se não forem de uma pasta. Nada é apagado no Drive.
+- Importar arquivo de playlists ficou desligado (mostra um aviso). Arquivos: `cloud/SmartPlaylistManager.kt`, `cloud/FolderPlaylists.kt`, `PlayerViewModel.kt`, teste `FolderPlaylistsTest`. Código escrito; ainda não compilado pelo Actions nem testado no aparelho.
 ### Alterado (tela de playlist no estilo Spotify + progresso da atualização)
 - Playlist aberta agora ocupa a tela toda: capa grande com o nome por cima, artistas, origem (pasta do Drive, sua playlist...), total de músicas e tempo ("3h 10min"), botões Baixar (só músicas da nuvem, com confirmação), Aleatório e Tocar/Pausar (verde, grande) e a lista de músicas com capa, título, artista e menu de três pontinhos (curtir, tocar a seguir, fila, adicionar à lista, remover). Apagar a playlist ficou no menu do canto da capa, com confirmação. Não tem botão de compartilhar de propósito (o app nunca expõe link do Drive). Arquivo novo: `ui/PlaylistDetail.kt`.
 - Faixa de progresso da atualização automática no Início e na Biblioteca ("Atualizando suas músicas", porcentagem e "Lendo as informações: X de Y"). Só aparece se a atualização passar de 1 segundo, para não piscar. Código escrito; ainda não compilado pelo Actions nem testado no aparelho.

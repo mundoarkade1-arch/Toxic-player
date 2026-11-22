@@ -99,6 +99,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         app, DriveApi(), viewModelScope,
         library = { cloud.tracks }, paths = { cloud.folderPaths }, playlists = { playlists.toMap() },
         commit = { changed -> changed.forEach { (k, v) -> playlists[k] = v }; savePlaylists() },
+        remove = { names -> names.forEach { playlists.remove(it) }; savePlaylists() },
         notify = { smartInfo = it }
     )
     // Histórico de escuta (só no aparelho). Alimenta, nas próximas etapas, o perfil de gosto e as recomendações.

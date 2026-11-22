@@ -25,6 +25,12 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 **(Texto antigo, já feito acima) Falta (telas, só com autorização):** botão "Importar playlists (.json)" ao lado do M3U (`ui/Screens.kt`, ~linha 422), botão "Sincronizar playlists do Drive" e o retorno destacado ("3 playlists atualizadas, +27 faixas, 4 não encontradas" + lista das não encontradas, que já está em `vm.smart.lastReport`). Hoje o resultado aparece na mensagem da aba Cloud.
 **Não validado:** build no Actions, leitura real do Drive, aparelho.
 
+## Só pastas viram playlist (2026-11-22) — código escrito, NÃO compilado, NÃO testado no aparelho
+- `SmartPlaylistManager` não lê mais o JSON do site/motor no Drive: `syncFromDrive` só refaz as playlists das pastas (`FolderPlaylists`). `withFolders` devolve só o arquivo das pastas. `importText` ficou desligado (aviso).
+- `FolderPlaylists.MIN_TRACKS = 5`: pasta com menos músicas não vira playlist.
+- `cleanupOldSmart` (uma vez, só com as pastas já carregadas): apaga playlists criadas antes pelo arquivo do site/motor, se tudo nelas foi posto pelo app (`added()`) e o nome não é de uma pasta; depois apaga o arquivo guardado. Usa o novo parâmetro `remove` do manager (ligado no `PlayerViewModel`).
+- Para validar: Início só com Curtidas, playlists suas e as pastas (40–50 músicas); sumiram as de 1–2 músicas; tocar numa abre a tela da playlist.
+
 ## Tela de playlist estilo Spotify e progresso (2026-11-22) — código escrito, NÃO compilado, NÃO testado no aparelho
 - `ui/PlaylistDetail.kt` (novo): `PlaylistDetail` (capa grande da 1ª música com capa, ou degradê com iniciais; nome por cima; artistas mais frequentes; origem; tempo total; Baixar/Aleatório/Tocar; lista de músicas). `LibraryHub` (`ui/PlaylistsScreen.kt`) mostra esta tela em tela cheia quando há playlist aberta (sem cabeçalho nem abas); o voltar fecha a playlist. O antigo `TrackList` continua para pastas, artistas e álbuns.
 - Baixar usa `cloud.downloadAll` com confirmação; mostra ícone de progresso enquanto baixa e "baixada" quando tudo está salvo.

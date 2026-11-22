@@ -1,6 +1,7 @@
 package com.meuapp.player.cloud
 
 import android.content.Context
+import com.meuapp.player.FAVORITES
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,8 +12,10 @@ import kotlinx.coroutines.withContext
 data class SmartInfo(val text: String, val report: String = "")
 
 /**
- * Liga os arquivos "playlists-inteligentes.json" (site) e "playlists-motor.json" (motor do PC) do Drive às playlists do app.
- * Os dois são juntados por [SmartMerge] num arquivo só. SEM TELA: só lógica.
+ * Playlists do app que vêm do Drive. DESDE 2026-11-22 só as PASTAS do Drive viram playlist (ver [FolderPlaylists]).
+ * Os arquivos "playlists-inteligentes.json" (site) e "playlists-motor.json" (motor) NÃO são mais lidos: eles criavam
+ * playlists de 1 ou 2 músicas. As playlists que eles já tinham criado são apagadas uma vez ([cleanupOldSmart]).
+ * SEM TELA: só lógica.
  * Todas as funções públicas devem ser chamadas na thread principal (as playlists do app são estado do Compose).
  * O app só LÊ o Drive. Nada aqui apaga ou escreve no Drive.
  *
@@ -27,6 +30,7 @@ class SmartPlaylistManager(
     private val paths: () -> Map<String, String>,
     private val playlists: () -> Map<String, List<Long>>,
     private val commit: (Map<String, List<Long>>) -> Unit,
+    private val remove: (Set<String>) -> Unit,
     private val notify: (SmartInfo) -> Unit
 ) {
     /** Entrega o aviso à tela junto com a lista das faixas não encontradas. */
@@ -81,11 +85,34 @@ class SmartPlaylistManager(
     }
 
     // ---------- pastas do Drive ----------
-    /** Junta as playlists vindas das pastas do Drive ao arquivo [stored] (que pode não existir). Só conta, sem tela. Pode rodar em segundo plano. */
-    private fun withFolders(stored: SmartFile?, lib: List<CloudTrack>, pathsNow: Map<String, String>): SmartFile? {
+    /** Monta as playlists a partir das pastas do Drive (só elas). Só conta, sem tela. Pode rodar em segundo plano. */
+    private fun withFolders(lib: List<CloudTrack>, pathsNow: Map<String, String>): SmartFile? {
         val folderFile = FolderPlaylists.build(lib, pathsNow)
         folderKeys = folderFile?.playlists?.map { SmartMatcher.key(it.name) }?.toSet() ?: emptySet()
-        return SmartMerge.merge(stored, folderFile)
+        return folderFile
+    }
+
+    /**
+     * Uma vez só: apaga as playlists que o arquivo do site/motor tinha criado (as de 1 ou 2 músicas) e esquece o arquivo.
+     * Só apaga a playlist se TUDO que está nela foi posto pelo app (se o usuário pôs uma música à mão, ela fica).
+     * Playlists com o mesmo nome de uma pasta ficam. Na thread principal.
+     */
+    private fun cleanupOldSmart(pathsNow: Map<String, String>) {
+        if (pathsNow.isEmpty()) return            // pastas ainda não carregadas: espera, para não apagar à toa
+        val old = storedFile() ?: return
+        val offered = added()
+        val cur = playlists()
+        val drop = HashSet<String>()
+        for (p in old.playlists) {
+            val key = SmartMatcher.key(p.name)
+            if (key in folderKeys) continue
+            val e = cur.entries.firstOrNull { SmartMatcher.key(it.key) == key } ?: continue
+            if (e.key == FAVORITES) continue
+            val mine = offered[e.key].orEmpty()
+            if (e.value.all { it in mine }) drop += e.key
+        }
+        if (drop.isNotEmpty()) remove(drop)
+        prefs.edit().remove("file").remove("gerado").remove("modified").remove("sig").apply()
     }
 
     // ---------- aplicar ----------
@@ -117,11 +144,13 @@ class SmartPlaylistManager(
     }
 
     /** Aplica [file] na thread principal (usado só ao importar um arquivo à mão). Devolve null se a biblioteca ainda está vazia. */
-    private fun applyFile(fileIn: SmartFile, ignoreDismissed: Boolean): SmartOutcome? {
+    private fun applyFile(ignoreDismissed: Boolean): SmartOutcome? {
         val lib = library()
         if (lib.isEmpty()) return null
         val pathsNow = paths()
-        val file = withFolders(fileIn, lib, pathsNow) ?: fileIn
+        val file = withFolders(lib, pathsNow)
+        cleanupOldSmart(pathsNow)
+        if (file == null) return SmartOutcome(emptyList())
         val skip = if (ignoreDismissed) emptySet() else dismissed()
         val synced = added()
         val out = SmartPlaylists.apply(file, lib, pathsNow, playlists(), synced, skip)
@@ -134,12 +163,14 @@ class SmartPlaylistManager(
      * Aplica sem travar a tela: a conta pesada roda em segundo plano e só o resultado volta à thread principal.
      * Se nada mudou desde a última vez (e não é [force]), pula tudo e devolve um resultado vazio.
      */
-    private suspend fun applyAsync(fileIn: SmartFile?, ignoreDismissed: Boolean, force: Boolean): SmartOutcome? {
+    private suspend fun applyAsync(ignoreDismissed: Boolean, force: Boolean): SmartOutcome? {
         val lib = library()
         if (lib.isEmpty()) return null
         val pathsNow = paths()
-        // Junta o arquivo do Drive (se existir) com as pastas do Drive; a conta roda em segundo plano.
-        val file = withContext(Dispatchers.Default) { withFolders(fileIn, lib, pathsNow) } ?: return null
+        // Só as pastas do Drive viram playlist; a conta roda em segundo plano.
+        val file = withContext(Dispatchers.Default) { withFolders(lib, pathsNow) }
+        cleanupOldSmart(pathsNow)
+        if (file == null) return SmartOutcome(emptyList())
         val sig = signature(lib, file, pathsNow)
         if (!force && sig == prefs.getString("sig", null)) return SmartOutcome(emptyList())
         val currentNow = playlists()
@@ -155,107 +186,21 @@ class SmartPlaylistManager(
     fun reapplyStored(announce: Boolean = false) {
         scope.launch(Dispatchers.Main) {
             try {
-                val f = withContext(Dispatchers.Default) { storedFile() }     // pode ser null: as pastas valem mesmo sem arquivo
-                val out = applyAsync(f, ignoreDismissed = false, force = announce) ?: return@launch
+                val out = applyAsync(ignoreDismissed = false, force = announce) ?: return@launch
                 if (announce || out.updated > 0) say(SmartPlaylists.describe(out))
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) { /* nunca derruba o app */ }
         }
     }
 
-    /** Importa um arquivo .json escolhido pelo usuário. Devolve uma frase simples. */
-    fun importText(text: String?): String = try {
-        when (val p = SmartPlaylistJson.parse(text)) {
-            is SmartParse.Invalid -> { lastReport = ""; "Não consegui ler este arquivo de playlists. ${p.reason}" }
-            is SmartParse.Ok -> {
-                saveFile(p.file, driveModified = "")
-                val out = applyFile(p.file, ignoreDismissed = true)
-                if (out == null) "Playlists guardadas. Elas entram quando a biblioteca da nuvem estiver sincronizada."
-                else SmartPlaylists.describe(out)
-            }
-        }
-    } catch (e: CancellationException) { throw e
-    } catch (e: Exception) { "Não consegui aplicar as playlists. Tente de novo." }
+    /** Importar arquivo de playlists foi desligado: agora só as pastas do Drive viram playlist. */
+    @Suppress("UNUSED_PARAMETER")
+    fun importText(text: String?): String =
+        "As playlists agora vêm só das pastas do Drive. Esse arquivo não é mais usado."
 
-    // ---------- leitura direta do Drive ----------
-    /**
-     * Depois de cada sincronização: baixa o JSON do Drive (se mudou), guarda e aplica; sempre reaplica as regras guardadas.
-     * Chamado automaticamente; [manual] = o usuário pediu, então avisa também quando não há novidade ou dá erro.
-     */
-    fun syncFromDrive(manual: Boolean = false) {
-        if (fetching) return
-        fetching = true
-        scope.launch(Dispatchers.IO) {
-            var parsed: SmartParse.Ok? = null
-            var modified = ""
-            var problem: String? = null
-            var loud = false        // erro que vale avisar mesmo no modo automático
-            var noFile = false      // não existe arquivo de playlists no Drive (as pastas ainda valem)
-            try {
-                val meta = api.findPlaylistsFile()
-                // O arquivo do motor é opcional: se der erro ao procurar, segue só com o do site.
-                val motorMeta = try { api.findMotorPlaylistsFile() } catch (e: CancellationException) { throw e } catch (e: Exception) { null }
-                val stamp = "${meta?.modifiedTime.orEmpty()}|${motorMeta?.modifiedTime.orEmpty()}"
-                if (meta == null && motorMeta == null) {
-                    problem = "Não achei o arquivo de playlists no Drive (pasta ${CloudConfig.PLAYLISTS_FOLDER}). Abra o site e toque em Atualizar tudo."
-                    noFile = true
-                } else if (!manual && stamp != "|" && stamp == prefs.getString("modified", "")) {
-                    // Arquivos iguais aos que já foram lidos: não baixa de novo.
-                } else {
-                    modified = stamp
-                    var site: SmartFile? = null
-                    var siteBad = false
-                    if (meta != null) {
-                        when (val p = SmartPlaylistJson.parse(api.readTextFile(meta.id))) {
-                            is SmartParse.Ok -> site = p.file
-                            is SmartParse.Invalid -> siteBad = true
-                        }
-                    }
-                    var motor: SmartFile? = null
-                    if (motorMeta != null) {
-                        try {
-                            val pm = SmartPlaylistJson.parse(api.readTextFile(motorMeta.id))
-                            if (pm is SmartParse.Ok) motor = pm.file
-                            else modified = ""      // arquivo do motor com problema: tenta de novo na próxima vez
-                        } catch (e: CancellationException) { throw e
-                        } catch (e: Exception) { modified = "" }
-                    }
-                    if (siteBad) {
-                        problem = "O arquivo de playlists no Drive está com problema. Abra o site e toque em Atualizar tudo de novo."
-                        loud = true
-                    } else {
-                        val merged = SmartMerge.merge(site, motor)
-                        if (merged != null) parsed = SmartParse.Ok(merged, 0)
-                        else problem = "O arquivo de playlists do motor está com problema. Rode o motor no PC de novo."
-                    }
-                }
-            } catch (e: CancellationException) { fetching = false; throw e
-            } catch (e: Exception) {
-                val kind = CloudErrors.classify(e)
-                problem = if (kind == CloudErrorKind.UNKNOWN) "Não consegui ler as playlists do Drive." else kind.message
-                if (kind == CloudErrorKind.NO_INTERNET && !manual) problem = null     // sem rede no automático: silêncio, usa o que já tem
-            }
-            val msg = problem
-            val loudNow = loud
-            val noFileNow = noFile
-            val newFile = parsed?.file
-            val driveModified = modified
-            withContext(Dispatchers.Main) {
-                try {
-                    if (newFile != null) saveFile(newFile, driveModified)
-                    val file = newFile ?: storedFile()
-                    val out = applyAsync(file, ignoreDismissed = false, force = manual)
-                    // Sem arquivo no Drive mas com playlists de pasta: não precisa reclamar do arquivo.
-                    val showProblem = msg != null && (loudNow || (manual && !(noFileNow && folderKeys.isNotEmpty())))
-                    if (showProblem && msg != null) { lastReport = ""; say(msg) }
-                    else if (out != null && (manual || out.updated > 0)) say(SmartPlaylists.describe(out))
-                    else if (out == null && manual) { lastReport = ""; say("A biblioteca da nuvem ainda está vazia. Sincronize a Cloud e tente de novo.") }
-                } catch (e: CancellationException) { throw e
-                } catch (e: Exception) { /* nunca derruba o app */
-                } finally { fetching = false }
-            }
-        }
-    }
+    // ---------- depois de sincronizar ----------
+    /** Não lê mais o Drive: só refaz as playlists das pastas. [manual] = o usuário pediu, então avisa o resultado. */
+    fun syncFromDrive(manual: Boolean = false) { reapplyStored(announce = manual) }
 
     /** Chamado pelo CloudManager (thread principal) depois de sincronizar a biblioteca. */
     fun onLibrarySynced() = syncFromDrive(manual = false)

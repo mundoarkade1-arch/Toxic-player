@@ -5,13 +5,15 @@ package com.meuapp.player.cloud
  * - Cada pasta que tem música DIRETO dentro vira uma playlist, com o nome da pasta.
  * - Música dentro de subpasta fica só na playlist da subpasta (a pasta de cima não junta tudo).
  * - Duas pastas com o mesmo nome em lugares diferentes: o nome fica com o caminho ("Música / Rock").
- * - A raiz do Drive e músicas sem pasta não viram playlist.
+ * - A raiz do Drive, músicas sem pasta e pastas com menos de [MIN_TRACKS] músicas não viram playlist.
  * O resultado usa o mesmo formato das playlists do site ([SmartFile]), com origem "Pasta",
  * então vale a regra de sempre: nunca remove faixa, respeita o que o usuário tirou e não recria playlist apagada.
  */
 object FolderPlaylists {
     const val ORIGIN = "Pasta"
     private const val MAX_NAME = 120
+    /** Pasta com menos músicas que isto NÃO vira playlist (evita playlist de 1 ou 2 músicas). */
+    const val MIN_TRACKS = 5
 
     /** [paths]: id da pasta -> caminho ("Música/Rock"), como o CloudRepository entrega. Devolve null se não há pasta com música. */
     fun build(library: List<CloudTrack>, paths: Map<String, String>): SmartFile? {
@@ -22,6 +24,7 @@ object FolderPlaylists {
             if (path == CloudFolders.ROOT || path == CloudFolders.OTHER || path.isBlank()) continue
             byParent.getOrPut(t.parentId) { ArrayList() } += t
         }
+        byParent.entries.removeAll { it.value.size < MIN_TRACKS }
         if (byParent.isEmpty()) return null
 
         fun lastName(path: String) = path.substringAfterLast('/').trim()
