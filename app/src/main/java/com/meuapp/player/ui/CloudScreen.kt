@@ -297,22 +297,46 @@ private fun MaintenanceButtons(vm: PlayerViewModel, cloud: CloudManager) {
 }
 
 @Composable
-private fun SyncStatus(cloud: CloudManager) {
-    Column(Modifier.fillMaxWidth().glass(16.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+internal fun SyncStatus(cloud: CloudManager) {
+    Column(Modifier.fillMaxWidth().glass(16.dp).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         when (val p = cloud.progress) {
             is SyncProgress.Listing -> {
-                Text("Procurando músicas no Drive... ${p.found} arquivos", fontSize = 13.sp)
+                Text("Atualizando suas músicas", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("Procurando no Drive: ${p.found} arquivos", fontSize = 12.sp, color = Neon.Dim)
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = Neon.Green)
             }
             is SyncProgress.Enriching -> {
-                Text("Lendo informações das músicas: ${p.done} de ${p.total}", fontSize = 13.sp)
+                val pct = if (p.total == 0) 0 else (p.done * 100L / p.total).toInt().coerceIn(0, 100)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Atualizando suas músicas", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text("$pct%", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Neon.Green)
+                }
+                Text("Lendo as informações: ${p.done} de ${p.total}", fontSize = 12.sp, color = Neon.Dim)
                 LinearProgressIndicator(progress = { if (p.total == 0) 0f else p.done.toFloat() / p.total }, modifier = Modifier.fillMaxWidth(), color = Neon.Green)
             }
             else -> {
-                Text("Sincronizando...", fontSize = 13.sp)
+                Text("Atualizando suas músicas...", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = Neon.Green)
             }
         }
+    }
+}
+
+/**
+ * Faixa de progresso da atualização automática (Início e Biblioteca). Só aparece se a atualização demorar
+ * mais de 1 segundo, para não piscar toda vez que o app confere o Drive e não há novidade.
+ */
+@Composable
+internal fun SyncBanner(cloud: CloudManager) {
+    val active = cloud.connected && (cloud.syncing || cloud.progress !is SyncProgress.Idle)
+    var show by remember { mutableStateOf(false) }
+    LaunchedEffect(active) {
+        if (active) { kotlinx.coroutines.delay(1000); show = true } else show = false
+    }
+    if (active && show) {
+        Spacer(Modifier.height(8.dp))
+        SyncStatus(cloud)
+        Spacer(Modifier.height(8.dp))
     }
 }
 

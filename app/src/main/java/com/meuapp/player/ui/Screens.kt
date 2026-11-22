@@ -837,7 +837,7 @@ private fun TrackRow(vm: PlayerViewModel, t: Track, playlist: String?, onPlay: (
 }
 
 @Composable
-private fun AddToListDialog(vm: PlayerViewModel, track: Track, onClose: () -> Unit) {
+internal fun AddToListDialog(vm: PlayerViewModel, track: Track, onClose: () -> Unit) {
     var newName by remember { mutableStateOf("") }
     GlassDialog(
         onDismissRequest = onClose,

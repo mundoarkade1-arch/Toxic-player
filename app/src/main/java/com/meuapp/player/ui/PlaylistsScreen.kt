@@ -92,8 +92,16 @@ fun LibraryHub(vm: PlayerViewModel, goPlayer: () -> Unit) {
     var showFilters by remember { mutableStateOf(false) }
     BackHandler(enabled = section == 1 && cloud.openGroup != null) { cloud.enterGroup(null) }
     val showSearch = if (section == 0) openPlaylist == null else (cloud.connected && cloud.openGroup == null)
+    val detail = openPlaylist?.takeIf { section == 0 && vm.playlists.containsKey(it) }
+    if (detail != null) {
+        // Playlist aberta: tela cheia no estilo Spotify (capa grande, botões e músicas).
+        BackHandler { openPlaylist = null }
+        PlaylistDetail(vm, detail, goPlayer) { openPlaylist = null }
+        return
+    }
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(top = 24.dp)) {
         PageHeader("BIBLIOTECA", if (section == 0) "Suas playlists" else "Suas músicas")
+        SyncBanner(vm.cloud)
         if (showSearch) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (section == 0) SearchField(playlistQuery, { playlistQuery = it }, "Buscar playlist", Modifier.weight(1f))

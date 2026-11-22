@@ -1,6 +1,9 @@
 # Changelog
 
 ## Não lançado
+### Alterado (tela de playlist no estilo Spotify + progresso da atualização)
+- Playlist aberta agora ocupa a tela toda: capa grande com o nome por cima, artistas, origem (pasta do Drive, sua playlist...), total de músicas e tempo ("3h 10min"), botões Baixar (só músicas da nuvem, com confirmação), Aleatório e Tocar/Pausar (verde, grande) e a lista de músicas com capa, título, artista e menu de três pontinhos (curtir, tocar a seguir, fila, adicionar à lista, remover). Apagar a playlist ficou no menu do canto da capa, com confirmação. Não tem botão de compartilhar de propósito (o app nunca expõe link do Drive). Arquivo novo: `ui/PlaylistDetail.kt`.
+- Faixa de progresso da atualização automática no Início e na Biblioteca ("Atualizando suas músicas", porcentagem e "Lendo as informações: X de Y"). Só aparece se a atualização passar de 1 segundo, para não piscar. Código escrito; ainda não compilado pelo Actions nem testado no aparelho.
 ### Alterado (Início: abrir a playlist em vez de tocar)
 - Tocar numa playlist no Início (cartões de "Suas playlists" e os 3 atalhos de playlist) agora abre a playlist na Biblioteca, com "Tocar tudo", "Aleatório" e a lista de músicas para escolher. Antes ela saía tocando.
 - Removido o bloco "Continuar ouvindo" do Início: o mini player já guarda a última música. Arquivos: `ui/CloudHome.kt`, `ui/CloudScreen.kt`, `ui/PlaylistsScreen.kt`, `PlayerViewModel.kt` (`openPlaylistRequest`). Código escrito; ainda não compilado pelo Actions nem testado no aparelho.

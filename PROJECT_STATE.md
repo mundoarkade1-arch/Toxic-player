@@ -25,6 +25,13 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 **(Texto antigo, já feito acima) Falta (telas, só com autorização):** botão "Importar playlists (.json)" ao lado do M3U (`ui/Screens.kt`, ~linha 422), botão "Sincronizar playlists do Drive" e o retorno destacado ("3 playlists atualizadas, +27 faixas, 4 não encontradas" + lista das não encontradas, que já está em `vm.smart.lastReport`). Hoje o resultado aparece na mensagem da aba Cloud.
 **Não validado:** build no Actions, leitura real do Drive, aparelho.
 
+## Tela de playlist estilo Spotify e progresso (2026-11-22) — código escrito, NÃO compilado, NÃO testado no aparelho
+- `ui/PlaylistDetail.kt` (novo): `PlaylistDetail` (capa grande da 1ª música com capa, ou degradê com iniciais; nome por cima; artistas mais frequentes; origem; tempo total; Baixar/Aleatório/Tocar; lista de músicas). `LibraryHub` (`ui/PlaylistsScreen.kt`) mostra esta tela em tela cheia quando há playlist aberta (sem cabeçalho nem abas); o voltar fecha a playlist. O antigo `TrackList` continua para pastas, artistas e álbuns.
+- Baixar usa `cloud.downloadAll` com confirmação; mostra ícone de progresso enquanto baixa e "baixada" quando tudo está salvo.
+- `AddToListDialog(vm, track)` em `ui/Screens.kt` virou `internal` para a nova tela usar.
+- Progresso: `SyncStatus` (agora `internal`, com porcentagem) e `SyncBanner` (`ui/CloudScreen.kt`) aparecem no Início e na Biblioteca quando `cloud.syncing` ou `cloud.progress` não é Idle, depois de 1 s.
+- Para validar: abrir playlist (capa, nome, botões); Tocar/Pausar; Aleatório; Baixar; menu das músicas; apagar pelo menu da capa; barra de progresso aparecendo numa atualização longa.
+
 ## Início abre a playlist (2026-11-22) — código escrito, NÃO compilado, NÃO testado no aparelho
 - Tocar numa playlist no Início chama `onOpenPlaylist` (`ui/CloudHome.kt`): `CloudScreen` guarda o nome em `vm.openPlaylistRequest`, limpa o grupo aberto e troca para a aba Biblioteca. `LibraryHub` (`ui/PlaylistsScreen.kt`) lê o pedido uma vez e abre direto na playlist (tela `TrackList`: Tocar tudo, Aleatório, músicas).
 - Os atalhos de playlist (até 3) também abrem a playlist. "Músicas curtidas", "Adicionadas recentemente" e "Aleatório" continuam tocando direto.

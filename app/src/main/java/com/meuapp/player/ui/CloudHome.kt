@@ -46,6 +46,7 @@ import com.meuapp.player.PlayerViewModel
 import com.meuapp.player.cloud.CloudHomeLogic
 import com.meuapp.player.cloud.CloudManager
 import com.meuapp.player.cloud.CloudTrack
+import com.meuapp.player.cloud.SyncProgress
 import java.util.Calendar
 
 private class Mix(val title: String, val subtitle: String, val tracks: List<CloudTrack>, val hue: Float)
@@ -101,6 +102,7 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
                 Text(CloudHomeLogic.greeting(hour), fontSize = 28.sp, fontWeight = FontWeight.Bold)
             }
         }
+        if (cloud.syncing || cloud.progress !is SyncProgress.Idle) item { SyncBanner(cloud) }
         cloud.message?.let { m -> item { MessageCard(m) { cloud.dismissMessage() } } }
         val myLists = vm.groups(3).filter { it.count > 0 }
             .sortedWith(compareBy<Folder>({ vm.playlistKind(it.name) }, { it.name.lowercase() }))
