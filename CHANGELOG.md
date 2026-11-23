@@ -1,6 +1,8 @@
 # Changelog
 
 ## Não lançado
+### Corrigido (playlist sem capa)
+- A capa da playlist agora é refeita quando as capas da nuvem chegam (antes ficava presa no desenho genérico até a playlist mudar) e procura capa na playlist inteira, não só nas 60 primeiras músicas. O mosaico prefere álbuns diferentes. Se nenhuma música tem imagem embutida, continua o desenho genérico (degradê com as letras do nome). Arquivo: `ui/PlaylistsScreen.kt`. Ainda não compilado nem testado no aparelho.
 ### Alterado (visual líquido, Início do Drive, Biblioteca offline, player, atualização, ícone)
 - Visual "vidro líquido": o `glass` ganhou brilho especular curvo, reflexo verde, filete de luz na borda e borda que acende nos cantos; barra de busca em vidro com borda verde ao digitar. Valem em todas as telas.
 - Início reorganizado: saudação, busca no topo (acha músicas e playlists), 3 atalhos (Curtidas, Recentes, Aleatório), "Suas playlists" em cartões de vidro com o nome em até 2 linhas e a quantidade de músicas sempre visível (antes cortava), "Suas músicas" (Todas, Artistas, Álbuns, Gêneros, Pastas, Recentes) e os mixes. "Ver todas" abre a grade de playlists; "Todas as músicas" abre a lista com filtros. TUDO do Drive fica no Início.

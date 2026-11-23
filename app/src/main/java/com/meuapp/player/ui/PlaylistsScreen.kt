@@ -40,7 +40,14 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun PlaylistCover(vm: PlayerViewModel, name: String, modifier: Modifier = Modifier, iconSize: androidx.compose.ui.unit.Dp = 44.dp) {
     val ids = vm.playlists[name]
-    val withCover = remember(ids) { vm.tracksIn("P:$name").take(60).filter { it.cloudId == null || it.coverStamp != 0L }.take(4) }
+    // Refaz quando a lista de músicas do player muda (as capas da nuvem chegam DEPOIS da primeira leitura) e olha a
+    // playlist inteira, não só as primeiras músicas. Prefere álbuns diferentes para o mosaico ficar variado.
+    val withCover = remember(ids, vm.cloud.playerTracks) {
+        vm.tracksIn("P:$name")
+            .filter { it.cloudId == null || it.coverStamp != 0L }
+            .distinctBy { it.album.ifBlank { it.id.toString() } }
+            .take(4)
+    }
     val c0 = rememberCover(withCover.getOrNull(0), 200).value
     val c1 = rememberCover(withCover.getOrNull(1), 200).value
     val c2 = rememberCover(withCover.getOrNull(2), 200).value

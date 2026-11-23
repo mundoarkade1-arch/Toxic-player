@@ -25,6 +25,9 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 **(Texto antigo, já feito acima) Falta (telas, só com autorização):** botão "Importar playlists (.json)" ao lado do M3U (`ui/Screens.kt`, ~linha 422), botão "Sincronizar playlists do Drive" e o retorno destacado ("3 playlists atualizadas, +27 faixas, 4 não encontradas" + lista das não encontradas, que já está em `vm.smart.lastReport`). Hoje o resultado aparece na mensagem da aba Cloud.
 **Não validado:** build no Actions, leitura real do Drive, aparelho.
 
+## Capa de playlist (2026-11-22) — NÃO compilado, NÃO testado
+- `PlaylistCover` (`ui/PlaylistsScreen.kt`): `remember` agora depende de `vm.cloud.playerTracks`; olha todas as músicas; `distinctBy` álbum; até 4 capas (mosaico se 4, senão a primeira). Sem nenhuma capa: degradê com letras.
+
 ## Visual líquido, Início do Drive, Biblioteca offline (2026-11-22) — código escrito, NÃO compilado, NÃO testado no aparelho
 - Abas: 0 Início (`ui/CloudScreen.kt` > `DriveHub`: página 0 `CloudHome`, 1 todas as músicas com filtros (`DriveSongs`), 2 grade de playlists (`PlaylistsSection`), e `PlaylistDetail` por cima), 1 Biblioteca (`ui/OfflineLibrary.kt`: baixadas + músicas do celular), 2 Ajustes. Buscar e `LibraryHub` foram removidos; `CloudMode` também.
 - `goPlayer` agora é real (`showPlayer = true` no `App`): tocar música abre o Player; o voltar minimiza.
