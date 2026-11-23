@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import com.meuapp.player.Folder
 import com.meuapp.player.PlayerViewModel
 import com.meuapp.player.cloud.CloudHomeLogic
+import com.meuapp.player.cloud.CloudLibrary
 import com.meuapp.player.cloud.CloudManager
 import com.meuapp.player.cloud.CloudTrack
 import com.meuapp.player.cloud.SyncProgress
@@ -54,12 +56,18 @@ private class Mix(val title: String, val subtitle: String, val tracks: List<Clou
 private fun gradient(hue: Float) = Brush.linearGradient(listOf(Color.hsv(hue, 0.62f, 0.66f), Color.hsv((hue + 38f) % 360f, 0.78f, 0.22f)))
 
 /**
- * Tela inicial do Toxic Cloud: saudação, atalhos, carrosséis e mixes gerados da biblioteca do próprio usuário.
- * [onOpen] abre uma lista na aba Biblioteca (view: 1 artistas, 3 gêneros; key: "A:nome" / "G:nome").
- * [onOpenPlaylist] abre uma playlist na Biblioteca (com "Tocar tudo" e as músicas); tocar a playlist inteira é escolha do usuário lá dentro.
+ * Início: TUDO do Drive num lugar só. Busca no topo (acha músicas e playlists), atalhos, playlists das pastas,
+ * navegar pelas músicas (todas, artistas, álbuns, gêneros, pastas, recentes) e mixes.
+ * [onOpenPlaylist] abre a tela da playlist (tocar é escolha do usuário lá dentro). [onSeePlaylists] abre a lista de todas as playlists.
+ * [onBrowse] abre a lista de músicas: view 0 todas, 1 artistas, 2 álbuns, 3 gêneros, 4 recentes, 5 pastas; key opcional ("A:nome", "G:nome").
+ * Tocar uma música abre o Player ([goPlayer]).
  */
 @Composable
-fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, onDevice: () -> Unit, onOpenPlaylist: (String) -> Unit, onOpen: (Int, String) -> Unit) {
+fun CloudHome(
+    vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, onDevice: () -> Unit,
+    query: String, onQuery: (String) -> Unit,
+    onOpenPlaylist: (String) -> Unit, onSeePlaylists: () -> Unit, onBrowse: (Int, String?) -> Unit
+) {
     // Sem internet, o Início mostra só o que está salvo no aparelho.
     val all = if (cloud.online) cloud.tracks else cloud.tracks.filter { it.id in cloud.offlineIds }
     val seed = remember { System.currentTimeMillis() / 86_400_000L }
@@ -79,7 +87,14 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
         out
     }
     val favs = all.filter { vm.isFav(it.numericId) }
-    val lists = vm.playlists.keys.sorted()
+    val searching = query.isNotBlank()
+    val found = remember(query, cloud.tracks, cloud.folderPaths, cloud.online, cloud.offlineIds) {
+        if (query.isBlank()) emptyList()
+        else CloudLibrary.sort(CloudLibrary.filter(cloud.tracks, query, paths = cloud.folderPaths), CloudLibrary.SORT_TITLE)
+            .let { r -> if (cloud.online) r else r.filter { it.id in cloud.offlineIds } }   // sem internet: só o que está salvo
+            .take(200)
+    }
+    val foundPlayer = remember(found, cloud.playerTracks) { found.mapNotNull { cloud.trackByNumericId(it.numericId) } }
 
     fun play(list: List<CloudTrack>, index: Int = 0) {
         val pl = list.mapNotNull { cloud.trackByNumericId(it.numericId) }
@@ -87,14 +102,14 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
     }
 
     val hour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
-    val shortcuts = ArrayList<Triple<String, ImageVector, () -> Unit>>()
-    shortcuts += Triple("Músicas curtidas", Icons.Rounded.Favorite, { play(favs) })
-    shortcuts += Triple("Adicionadas recentemente", Icons.Rounded.Schedule, { play(CloudHomeLogic.recent(all, 100)) })
-    shortcuts += Triple("Aleatório", Icons.Rounded.Shuffle, { play(CloudHomeLogic.shuffled(all, System.nanoTime(), 100)) })
-    lists.take(3).forEach { n ->
-        shortcuts += Triple(n, Icons.Rounded.LibraryMusic, { onOpenPlaylist(n) })
-    }
+    val shortcuts = listOf<Triple<String, ImageVector, () -> Unit>>(
+        Triple("Curtidas", Icons.Rounded.Favorite, { play(favs) }),
+        Triple("Recentes", Icons.Rounded.Schedule, { play(CloudHomeLogic.recent(all, 100)) }),
+        Triple("Aleatório", Icons.Rounded.Shuffle, { play(CloudHomeLogic.shuffled(all, System.nanoTime(), 100)) })
+    )
 
+    val myLists = vm.groups(3).filter { it.count > 0 }
+        .sortedWith(compareBy<Folder>({ vm.playlistKind(it.name) }, { it.name.lowercase() }))
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
         item {
             Column {
@@ -102,23 +117,24 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
                 Text(CloudHomeLogic.greeting(hour), fontSize = 28.sp, fontWeight = FontWeight.Bold)
             }
         }
+        item { SearchField(query, onQuery, "Buscar músicas, artistas e playlists") }
         if (cloud.syncing || cloud.progress !is SyncProgress.Idle) item { SyncBanner(cloud) }
         cloud.message?.let { m -> item { MessageCard(m) { cloud.dismissMessage() } } }
-        val myLists = vm.groups(3).filter { it.count > 0 }
-            .sortedWith(compareBy<Folder>({ vm.playlistKind(it.name) }, { it.name.lowercase() }))
-        if (myLists.isNotEmpty()) {
-            item { Section("Suas playlists") }
-            item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(myLists, key = { it.path }) { g ->
-                        Column(Modifier.width(140.dp).clip(RoundedCornerShape(20.dp)).clickable { onOpenPlaylist(g.name) }) {
-                            PlaylistCover(vm, g.name, Modifier.size(140.dp), 48.dp)
-                            Text(g.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-                            Text(plural(g.count) + kindSuffix(vm.playlistKind(g.name)), fontSize = 11.sp, color = Neon.Dim)
-                        }
-                    }
+        if (searching) {
+            val matchLists = myLists.filter { it.name.contains(query.trim(), ignoreCase = true) }
+            if (matchLists.isNotEmpty()) {
+                item { Section("Playlists") }
+                item { PlaylistRow(vm, matchLists, onOpenPlaylist) }
+            }
+            if (found.isEmpty() && matchLists.isEmpty()) {
+                item { EmptyState(Icons.Rounded.Search, "Nada encontrado para \"${query.trim()}\".") }
+            } else if (found.isNotEmpty()) {
+                item { Section("Músicas · ${plural(found.size)}") }
+                items(found.size, key = { found[it].id }) { i ->
+                    CloudTrackRow(vm, cloud, found[i]) { vm.playList(foundPlayer, i); goPlayer() }
                 }
             }
+            return@LazyColumn
         }
         if (all.isEmpty()) {
             item {
@@ -136,10 +152,19 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
             }
             return@LazyColumn
         }
-        items(shortcuts.chunked(2)) { row ->
+        item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { (label, icon, action) -> Shortcut(label, icon, Modifier.weight(1f), action) }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
+                shortcuts.forEach { (label, icon, action) -> ActionTile(label, icon, Modifier.weight(1f), action) }
+            }
+        }
+        if (myLists.isNotEmpty()) {
+            item { SectionRow("Suas playlists", "Ver todas", onSeePlaylists) }
+            item { PlaylistRow(vm, myLists, onOpenPlaylist) }
+        }
+        item { Section("Suas músicas") }
+        item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(BROWSE_CHIPS) { (label, mode) -> Chip(label) { onBrowse(mode, null) } }
             }
         }
         if (mixes.isNotEmpty()) {
@@ -160,7 +185,7 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(artists) { a ->
                         val first = remember(all, a.name) { CloudHomeLogic.byArtist(all, a.name).firstOrNull { it.hasCover } ?: CloudHomeLogic.byArtist(all, a.name).first() }
-                        ArtistCard(cloud, a.name, a.count, first) { onOpen(1, "A:${a.name}") }
+                        ArtistCard(cloud, a.name, a.count, first) { onBrowse(1, "A:${a.name}") }
                     }
                 }
             }
@@ -173,7 +198,7 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
                         Box(
                             Modifier.weight(1f).height(88.dp).clip(RoundedCornerShape(20.dp)).background(gradient(CloudHomeLogic.hueOf(g.name)))
                                 .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(20.dp))
-                                .clickable { onOpen(3, "G:${g.name}") }.padding(14.dp)
+                                .clickable { onBrowse(3, "G:${g.name}") }.padding(14.dp)
                         ) {
                             Text(g.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             Text("${g.count}", fontSize = 11.sp, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.BottomStart))
@@ -194,14 +219,49 @@ fun CloudHome(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, on
 @Composable
 private fun Section(text: String) = Text(text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
 
+private val BROWSE_CHIPS = listOf("Todas" to 0, "Artistas" to 1, "Álbuns" to 2, "Gêneros" to 3, "Pastas" to 5, "Recentes" to 4)
+
+/** Título de seção com um botão de texto à direita (ex.: "Ver todas"). */
 @Composable
-private fun Shortcut(label: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
-    Row(modifier.height(58.dp).glass(18.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
+private fun SectionRow(title: String, action: String, onAction: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text(
+            action, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Neon.Green,
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onAction).padding(horizontal = 10.dp, vertical = 6.dp)
+        )
+    }
+}
+
+/** Atalho em vidro líquido: ícone em cima e nome embaixo (cabe em 3 colunas sem cortar). */
+@Composable
+private fun ActionTile(label: String, icon: ImageVector, modifier: Modifier, onClick: () -> Unit) {
+    Column(
+        modifier.glass(22.dp).clickable(onClick = onClick).padding(vertical = 14.dp, horizontal = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
         Box(
-            Modifier.size(58.dp).background(Brush.linearGradient(listOf(Neon.Green.copy(alpha = 0.30f), Neon.Lime.copy(alpha = 0.10f)))),
+            Modifier.size(40.dp).clip(CircleShape).background(Brush.linearGradient(listOf(Neon.Green.copy(alpha = 0.34f), Neon.Lime.copy(alpha = 0.12f)))),
             contentAlignment = Alignment.Center
         ) { Icon(icon, null, tint = Neon.Green) }
-        Text(label, Modifier.padding(horizontal = 12.dp), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Carrossel de playlists: cartão de vidro com capa, nome (até 2 linhas) e quantidade de músicas, sem cortar nada. */
+@Composable
+private fun PlaylistRow(vm: PlayerViewModel, lists: List<Folder>, onOpen: (String) -> Unit) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(lists, key = { it.path }) { g ->
+            Column(Modifier.width(158.dp).glass(24.dp).clickable { onOpen(g.name) }.padding(8.dp)) {
+                PlaylistCover(vm, g.name, Modifier.size(142.dp), 48.dp)
+                Text(
+                    g.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp)
+                )
+                Text(plural(g.count), fontSize = 12.sp, color = Neon.Dim, maxLines = 1, modifier = Modifier.padding(start = 2.dp, top = 2.dp, bottom = 2.dp))
+            }
+        }
     }
 }
 

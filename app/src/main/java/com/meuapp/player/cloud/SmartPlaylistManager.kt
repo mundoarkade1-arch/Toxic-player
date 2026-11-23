@@ -93,26 +93,29 @@ class SmartPlaylistManager(
     }
 
     /**
-     * Uma vez só: apaga as playlists que o arquivo do site/motor tinha criado (as de 1 ou 2 músicas) e esquece o arquivo.
-     * Só apaga a playlist se TUDO que está nela foi posto pelo app (se o usuário pôs uma música à mão, ela fica).
-     * Playlists com o mesmo nome de uma pasta ficam. Na thread principal.
+     * Limpeza automática: apaga do app as playlists que o PRÓPRIO app criou antes e que hoje não valem mais
+     * (as do arquivo do site/motor e as de pastas pequenas demais, com menos de [FolderPlaylists.MIN_TRACKS] músicas).
+     * Só apaga se TUDO que está na playlist foi posto pelo app (se o usuário pôs uma música à mão, ela fica).
+     * Playlist de pasta que vale hoje nunca é apagada. Nada é apagado no Drive. Na thread principal.
      */
     private fun cleanupOldSmart(pathsNow: Map<String, String>) {
         if (pathsNow.isEmpty()) return            // pastas ainda não carregadas: espera, para não apagar à toa
-        val old = storedFile() ?: return
-        val offered = added()
-        val cur = playlists()
-        val drop = HashSet<String>()
-        for (p in old.playlists) {
-            val key = SmartMatcher.key(p.name)
-            if (key in folderKeys) continue
-            val e = cur.entries.firstOrNull { SmartMatcher.key(it.key) == key } ?: continue
-            if (e.key == FAVORITES) continue
-            val mine = offered[e.key].orEmpty()
-            if (e.value.all { it in mine }) drop += e.key
+        val oldKeys = HashSet<String>()
+        storedFile()?.playlists?.forEach { oldKeys += SmartMatcher.key(it.name) }
+        oldKeys += SmartState.namesFromJson(prefs.getString("made", null))
+        oldKeys -= folderKeys
+        if (oldKeys.isNotEmpty()) {
+            val offered = added()
+            val drop = HashSet<String>()
+            for ((name, ids) in playlists()) {
+                if (name == FAVORITES || SmartMatcher.key(name) !in oldKeys) continue
+                val mine = offered[name].orEmpty()
+                if (ids.all { it in mine }) drop += name
+            }
+            if (drop.isNotEmpty()) remove(drop)
         }
-        if (drop.isNotEmpty()) remove(drop)
-        prefs.edit().remove("file").remove("gerado").remove("modified").remove("sig").apply()
+        prefs.edit().remove("file").remove("gerado").remove("modified").remove("sig")
+            .putString("made", SmartState.namesToJson(folderKeys)).apply()
     }
 
     // ---------- aplicar ----------

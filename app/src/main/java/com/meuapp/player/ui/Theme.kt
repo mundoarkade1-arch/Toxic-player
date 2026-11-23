@@ -54,16 +54,46 @@ fun AppTheme(content: @Composable () -> Unit) {
     )
 }
 
-/** Efeito vidro: preenchimento em degradê translúcido + borda com brilho no canto superior. */
+/**
+ * Efeito "vidro líquido" (estilo Apple): vidro translúcido com brilho especular curvo no canto de cima,
+ * reflexo verde embaixo à direita, filete de luz na borda de cima e borda que acende nos cantos.
+ * Tudo desenhado em degradês (sem desfoque do fundo), então é leve em qualquer celular.
+ */
 fun Modifier.glass(radius: Dp = 24.dp, strong: Boolean = false): Modifier {
     val s = RoundedCornerShape(radius)
-    val top = if (strong) 0.16f else 0.10f
-    val bottom = if (strong) 0.07f else 0.035f
+    val top = if (strong) 0.20f else 0.13f
+    val bottom = if (strong) 0.08f else 0.04f
+    val shine = if (strong) 0.26f else 0.18f
     return this.clip(s)
         .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = top), Color.White.copy(alpha = bottom))), s)
+        .drawBehind {
+            val r = radius.toPx()
+            val big = maxOf(size.width, size.height)
+            // Brilho especular: uma "poça" de luz no canto de cima à esquerda.
+            drawRect(
+                Brush.radialGradient(
+                    listOf(Color.White.copy(alpha = shine), Color.Transparent),
+                    center = Offset(size.width * 0.14f, -size.height * 0.10f), radius = big * 0.75f
+                )
+            )
+            // Reflexo da cor da marca no canto de baixo à direita, como luz atravessando o líquido.
+            drawRect(
+                Brush.radialGradient(
+                    listOf(Neon.Green.copy(alpha = 0.13f), Color.Transparent),
+                    center = Offset(size.width * 0.96f, size.height * 1.05f), radius = big * 0.65f
+                )
+            )
+            // Filete de luz na borda de cima.
+            if (size.width > r * 2.5f) {
+                drawLine(
+                    Brush.horizontalGradient(listOf(Color.Transparent, Color.White.copy(alpha = 0.55f), Color.Transparent), startX = r, endX = size.width - r),
+                    Offset(r, 1.2f), Offset(size.width - r, 1.2f), strokeWidth = 1.6f
+                )
+            }
+        }
         .border(
             1.dp,
-            Brush.linearGradient(listOf(Color.White.copy(alpha = 0.32f), Color.White.copy(alpha = 0.04f), Color.White.copy(alpha = 0.14f))),
+            Brush.linearGradient(listOf(Color.White.copy(alpha = 0.48f), Color.White.copy(alpha = 0.05f), Color.White.copy(alpha = 0.05f), Color.White.copy(alpha = 0.26f))),
             s
         )
 }

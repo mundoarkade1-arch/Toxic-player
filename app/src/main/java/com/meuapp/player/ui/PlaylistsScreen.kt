@@ -80,51 +80,9 @@ internal fun PlaylistCover(vm: PlayerViewModel, name: String, modifier: Modifier
     }
 }
 
-/** Biblioteca: só "Playlists" e "Músicas", com a busca em cima. Filtros e ordem ficam atrás de um botão pequeno. */
+/** Lista de todas as playlists (grade), com "Nova playlist" e filtros por tipo. Aberta pelo "Ver todas" do Início. */
 @Composable
-fun LibraryHub(vm: PlayerViewModel, goPlayer: () -> Unit) {
-    val cloud = vm.cloud
-    // Se o Início pediu uma playlist, a Biblioteca já abre dentro dela (lê o pedido uma vez e limpa).
-    val requested = remember { vm.openPlaylistRequest.also { vm.openPlaylistRequest = null } }
-    var section by remember { mutableIntStateOf(if (requested == null && cloud.openGroup != null) 1 else 0) }
-    var openPlaylist by remember { mutableStateOf<String?>(requested) }
-    var playlistQuery by remember { mutableStateOf("") }
-    var showFilters by remember { mutableStateOf(false) }
-    BackHandler(enabled = section == 1 && cloud.openGroup != null) { cloud.enterGroup(null) }
-    val showSearch = if (section == 0) openPlaylist == null else (cloud.connected && cloud.openGroup == null)
-    val detail = openPlaylist?.takeIf { section == 0 && vm.playlists.containsKey(it) }
-    if (detail != null) {
-        // Playlist aberta: tela cheia no estilo Spotify (capa grande, botões e músicas).
-        BackHandler { openPlaylist = null }
-        PlaylistDetail(vm, detail, goPlayer) { openPlaylist = null }
-        return
-    }
-    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(top = 24.dp)) {
-        PageHeader("BIBLIOTECA", if (section == 0) "Suas playlists" else "Suas músicas")
-        SyncBanner(vm.cloud)
-        if (showSearch) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (section == 0) SearchField(playlistQuery, { playlistQuery = it }, "Buscar playlist", Modifier.weight(1f))
-                else SearchField(cloud.query, cloud::changeQuery, "Buscar música, artista ou álbum", Modifier.weight(1f))
-                if (section == 1) {
-                    IconButton(onClick = { showFilters = true }) {
-                        Icon(Icons.Rounded.Tune, "Filtros e ordem", tint = if (filtersActive(cloud)) Neon.Green else Neon.Dim)
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-        SegmentedTabs(listOf("Playlists", "Músicas"), section) { section = it }
-        Spacer(Modifier.height(10.dp))
-        if (section == 0) PlaylistsSection(vm, goPlayer, playlistQuery, openPlaylist) { openPlaylist = it }
-        else if (!cloud.connected) ConnectCard(cloud, header = false)
-        else DriveSongs(vm, cloud, goPlayer)
-    }
-    if (showFilters) FiltersDialog(cloud) { showFilters = false }
-}
-
-@Composable
-private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit, query: String, open: String?, onOpen: (String?) -> Unit) {
+internal fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit, query: String, open: String?, onOpen: (String?) -> Unit) {
     var newDialog by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var plusMenu by remember { mutableStateOf(false) }
@@ -179,7 +137,7 @@ private fun PlaylistsSection(vm: PlayerViewModel, goPlayer: () -> Unit, query: S
                     Column(Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).clickable { onOpen(name) }) {
                         PlaylistCover(vm, name, Modifier.fillMaxWidth().aspectRatio(1f), 52.dp)
                         Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-                        Text(plural(g.count) + kindSuffix(kindOf[name] ?: CloudHomeLogic.KIND_MINE), fontSize = 11.sp, color = Neon.Dim)
+                        Text(plural(g.count) + kindSuffix(kindOf[name] ?: CloudHomeLogic.KIND_MINE), fontSize = 11.sp, color = Neon.Dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))

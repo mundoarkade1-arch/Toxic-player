@@ -1,6 +1,16 @@
 # Changelog
 
 ## Não lançado
+### Alterado (visual líquido, Início do Drive, Biblioteca offline, player, atualização, ícone)
+- Visual "vidro líquido": o `glass` ganhou brilho especular curvo, reflexo verde, filete de luz na borda e borda que acende nos cantos; barra de busca em vidro com borda verde ao digitar. Valem em todas as telas.
+- Início reorganizado: saudação, busca no topo (acha músicas e playlists), 3 atalhos (Curtidas, Recentes, Aleatório), "Suas playlists" em cartões de vidro com o nome em até 2 linhas e a quantidade de músicas sempre visível (antes cortava), "Suas músicas" (Todas, Artistas, Álbuns, Gêneros, Pastas, Recentes) e os mixes. "Ver todas" abre a grade de playlists; "Todas as músicas" abre a lista com filtros. TUDO do Drive fica no Início.
+- A aba Buscar saiu (a busca está no Início). Abas agora: Início, Biblioteca, Ajustes.
+- Biblioteca (novo `ui/OfflineLibrary.kt`): só o que está salvo no aparelho: "Baixadas" (do Drive) e "No celular", com busca, Tocar tudo e Aleatório. Nada do Drive que não esteja baixado aparece aí. Saiu "Músicas do aparelho" de Ajustes e os botões de importar/sincronizar playlists (.json) do Avançado.
+- Tocar numa música (em playlist, busca, lista ou atalhos) agora abre o Player. O voltar do Player só minimiza.
+- Playlists só de pastas com NO MÍNIMO 20 músicas (`FolderPlaylists.MIN_TRACKS`). As "Descobertas do dia" automáticas foram desligadas (e a que existir com menos de 20 é apagada). Limpeza automática apaga playlists antigas criadas pelo app que não valem mais (só se tudo nelas foi posto pelo app).
+- Atualização: ao abrir o app, se houver versão nova, aparece uma janela "Nova versão disponível" com "Atualizar agora" ou "Depois" (não fecha tocando fora). O pontinho em Ajustes continua.
+- Ícone novo: disco de vidro com borda em degradê e ondas de som (equalizador) nas cores do app; versão monocromática atualizada.
+- Código escrito; ainda não compilado pelo Actions nem testado no aparelho.
 ### Alterado (só as pastas viram playlist)
 - As playlists do app agora vêm SÓ das pastas do Drive (nome da pasta = nome da playlist). Os arquivos de playlists do site e do motor não são mais lidos, porque criavam playlists de 1 ou 2 músicas. Pasta com menos de 5 músicas não vira playlist (`FolderPlaylists.MIN_TRACKS`).
 - Limpeza única: as playlists que esses arquivos já tinham criado são apagadas do app se só tiverem músicas postas pelo app (se você pôs uma música à mão, a playlist fica) e se não forem de uma pasta. Nada é apagado no Drive.

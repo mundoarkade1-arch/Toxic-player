@@ -69,8 +69,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val playlists = mutableStateMapOf<String, List<Long>>()
     /** Último resultado das playlists do Drive, mostrado em destaque nas telas até o usuário fechar. */
     var smartInfo by mutableStateOf<SmartInfo?>(null); private set
-    /** Pedido do Início: abrir esta playlist na Biblioteca. A Biblioteca lê uma vez e limpa. Não é estado do Compose de propósito. */
-    @Volatile var openPlaylistRequest: String? = null
     fun dismissSmartInfo() { smartInfo = null }
 
     // Biblioteca
@@ -596,15 +594,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * Se o usuário apagar a playlist, ela não volta sozinha (só se ele criar de novo pelo nome).
      */
     private fun runDailyDiscoveries() {
+        // DESLIGADO (2026-11-22): o usuário quer só playlists de pastas, com no mínimo 20 músicas.
+        // As "Descobertas do dia" já criadas com menos de 20 músicas são apagadas (a playlist é automática).
         try {
-            if (cloud.tracks.isEmpty()) return                      // biblioteca ainda vazia: tenta na próxima
-            val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
-            val last = prefs.getString("disc_last_day", null)
-            val deleted = prefs.getBoolean("disc_deleted", false)
-            if (!DailyDiscoveryGate.shouldRun(today, last, deleted)) return
-            createIntentPlaylist(DailyDiscoveryGate.NAME, 15)
-            prefs.edit().putString("disc_last_day", today).apply()
-        } catch (e: Exception) { /* descoberta é um extra: nunca pode atrapalhar a abertura do app */ }
+            val name = playlists.keys.firstOrNull { DailyDiscoveryGate.isDiscoveryName(it) } ?: return
+            if ((playlists[name]?.size ?: 0) < com.meuapp.player.cloud.FolderPlaylists.MIN_TRACKS) {
+                playlists.remove(name); savePlaylists()
+                prefs.edit().putBoolean("disc_deleted", true).apply()
+            }
+        } catch (e: Exception) { /* nunca pode atrapalhar a abertura do app */ }
     }
 
     /**

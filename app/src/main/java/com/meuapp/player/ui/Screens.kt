@@ -64,13 +64,18 @@ import kotlin.math.max
 import kotlin.math.pow
 
 // ───────────── Estrutura principal + navegação ─────────────
-/** Abas: 0 Início, 1 Buscar, 2 Biblioteca (playlists e músicas), 3 Ajustes (inclui "Músicas do aparelho" e "Avançado"). O Player abre por cima, ao tocar no mini player. */
+/**
+ * Abas: 0 Início (TUDO do Drive: busca, playlists das pastas e músicas), 1 Biblioteca (só o que está salvo no aparelho:
+ * músicas baixadas e músicas do celular), 2 Ajustes. O Player abre por cima ao tocar numa música ou no mini player;
+ * o voltar dele só minimiza (a música continua tocando no mini player).
+ */
 @Composable
 fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
     var tab by remember { mutableIntStateOf(0) }
     var showPlayer by remember { mutableStateOf(false) }
-    var settingsStart by remember { mutableIntStateOf(0) }
-    val openDevice = { settingsStart = 5; tab = 3 }
+    var updateLater by remember { mutableStateOf(false) }      // "Depois": não mostra de novo nesta abertura do app
+    val openPlayer = { showPlayer = true }
+    val openDevice = { tab = 1 }
     CloudAuthEffect(vm.cloud)
     val bg by rememberCover(vm.currentTrack, 48)
     val target = bg?.let { lerp(Neon.Glow, Color(CoverLoader.averageColor(it)), 0.5f) } ?: Neon.Glow
@@ -81,13 +86,16 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
             title = { Text("Bem-vindo ao Toxic Player", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("• Início: continue de onde parou e veja suas playlists. Toque no player de baixo para abri-lo.")
-                    Text("• Buscar e Biblioteca: tudo o que está no seu Google Drive.")
-                    Text("• Ajustes: conta, equalizador, atualização e as músicas do celular. O app se atualiza sozinho.")
+                    Text("• Início: tudo do seu Google Drive. Busque músicas e abra suas playlists (cada pasta vira uma).")
+                    Text("• Biblioteca: só o que está salvo no aparelho, para ouvir sem internet.")
+                    Text("• Ajustes: conta, equalizador e atualização. O app se atualiza sozinho.")
                 }
             },
             confirmButton = { TextButton(onClick = { vm.dismissTips() }) { Text("Entendi", color = Neon.Green, fontWeight = FontWeight.Bold) } }
         )
+    } else if (vm.update != null && !updateLater) {
+        // Atualização disponível: aparece logo ao abrir o app. Só dá para seguir escolhendo "Atualizar agora" ou "Depois".
+        UpdatePrompt(vm) { updateLater = true }
     }
     BackHandler(enabled = showPlayer) { showPlayer = false }
     BackHandler(enabled = !showPlayer && tab != 0) { tab = 0 }
@@ -96,7 +104,7 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
         bottomBar = {
             if (!showPlayer) Column {
                 AnimatedVisibility(visible = vm.currentTrack != null) { MiniPlayer(vm) { showPlayer = true } }
-                NavBar(tab, vm.update != null) { settingsStart = 0; tab = it }
+                NavBar(tab, vm.update != null) { tab = it }
             }
         }
     ) { pad ->
@@ -109,10 +117,9 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
                     } else {
                         Crossfade(targetState = tab, animationSpec = tween(220), label = "tab") { t ->
                             when (t) {
-                                0 -> CloudScreen(vm, {}, CloudMode.HOME, onNav = { tab = it }, onDevice = openDevice)
-                                1 -> CloudScreen(vm, {}, CloudMode.SEARCH)
-                                2 -> LibraryHub(vm) {}
-                                else -> SettingsScreen(vm, granted, askPerm, settingsStart)
+                                0 -> CloudScreen(vm, openPlayer, onDevice = openDevice)
+                                1 -> OfflineLibrary(vm, granted, askPerm, openPlayer)
+                                else -> SettingsScreen(vm, granted, askPerm, 0)
                             }
                         }
                     }
@@ -120,6 +127,33 @@ fun App(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit) {
             }
         }
     }
+}
+
+/** Aviso de atualização ao abrir o app. Não fecha tocando fora nem no voltar: o usuário escolhe "Atualizar agora" ou "Depois". */
+@Composable
+private fun UpdatePrompt(vm: PlayerViewModel, onLater: () -> Unit) {
+    val info = vm.update ?: return
+    var tried by remember { mutableStateOf(false) }
+    GlassDialog(
+        onDismissRequest = {},
+        title = { Text("Nova versão disponível", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("A versão ${info.versionName} está pronta para instalar.", fontSize = 15.sp)
+                info.notes.trim().takeIf { it.isNotEmpty() }?.let { Text(it.take(240), fontSize = 12.sp, color = Neon.Dim) }
+                if (vm.progress >= 0f) {
+                    LinearProgressIndicator(progress = { vm.progress }, color = Neon.Green, trackColor = Color.White.copy(alpha = 0.12f), modifier = Modifier.fillMaxWidth().clip(CircleShape))
+                }
+                if (tried && vm.updateMsg.isNotBlank()) Text(vm.updateMsg, fontSize = 12.sp, color = Neon.Dim)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { tried = true; vm.installUpdate() }, enabled = !vm.busy) {
+                Text(if (vm.busy) "Baixando..." else "Atualizar agora", color = if (vm.busy) Neon.Faint else Neon.Green, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = { TextButton(onClick = onLater, enabled = !vm.busy) { Text("Depois") } }
+    )
 }
 
 /** Aviso leve de "sem internet". O app continua funcionando com o que está salvo no aparelho. */
@@ -140,9 +174,8 @@ private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
     val haptic = LocalHapticFeedback.current
     val items = listOf(
         Triple("Início", Icons.Rounded.Home, 0),
-        Triple("Buscar", Icons.Rounded.Search, 1),
-        Triple("Biblioteca", Icons.Rounded.LibraryMusic, 2),
-        Triple("Ajustes", Icons.Rounded.Settings, 3)
+        Triple("Biblioteca", Icons.Rounded.LibraryMusic, 1),
+        Triple("Ajustes", Icons.Rounded.Settings, 2)
     )
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp).glass(30.dp, strong = true).padding(5.dp),
@@ -163,7 +196,7 @@ private fun NavBar(tab: Int, hasUpdate: Boolean, onTab: (Int) -> Unit) {
             ) {
                 Box {
                     Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp))
-                    if (i == 3 && hasUpdate) Box(Modifier.size(8.dp).clip(CircleShape).background(Neon.Lime).align(Alignment.TopEnd))
+                    if (i == 2 && hasUpdate) Box(Modifier.size(8.dp).clip(CircleShape).background(Neon.Lime).align(Alignment.TopEnd))
                 }
                 Text(label, fontSize = 10.sp, color = tint, maxLines = 1, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
             }
@@ -300,6 +333,11 @@ internal fun EmptyState(icon: ImageVector, text: String) {
 internal fun SearchField(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = Modifier) {
     OutlinedTextField(
         value = value, onValueChange = onChange, singleLine = true, shape = CircleShape,
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = Color.White.copy(alpha = 0.10f), unfocusedContainerColor = Color.White.copy(alpha = 0.06f),
+            focusedBorderColor = Neon.Green.copy(alpha = 0.75f), unfocusedBorderColor = Color.White.copy(alpha = 0.16f),
+            cursorColor = Neon.Green
+        ),
         placeholder = { Text(label, color = Neon.Faint, maxLines = 1) },
         leadingIcon = { Icon(Icons.Rounded.Search, null) },
         trailingIcon = {
@@ -868,7 +906,7 @@ internal fun AddToListDialog(vm: PlayerViewModel, track: Track, onClose: () -> U
 }
 
 @Composable
-private fun PermissionCard(text: String, button: String, onClick: () -> Unit) {
+internal fun PermissionCard(text: String, button: String, onClick: () -> Unit) {
     Column(
         Modifier.fillMaxWidth().glass(28.dp).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)

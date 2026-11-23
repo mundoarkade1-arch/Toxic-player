@@ -188,7 +188,7 @@ internal fun PlaylistDetail(vm: PlayerViewModel, name: String, goPlayer: () -> U
         // ---------- músicas ----------
         items(list.size) { i ->
             val t = list[i]
-            PlaylistRow(vm, t, name, onPlay = { vm.playList(list, i); goPlayer() }, onAdd = { pickFor = t })
+            SongRow(vm, t, name, onPlay = { vm.playList(list, i); goPlayer() }, onAdd = { pickFor = t })
         }
     }
 
@@ -213,9 +213,12 @@ internal fun PlaylistDetail(vm: PlayerViewModel, name: String, goPlayer: () -> U
     pickFor?.let { tr -> AddToListDialog(vm, tr) { pickFor = null } }
 }
 
-/** Linha de música como no Spotify: capa, título, artista e três pontinhos. A música que está tocando fica em verde. */
+/**
+ * Linha de música como no Spotify: capa, título, artista e três pontinhos. A música que está tocando fica em verde.
+ * [playlist] = nome da playlist aberta (habilita "Remover desta lista"); null fora de playlist.
+ */
 @Composable
-private fun PlaylistRow(vm: PlayerViewModel, t: Track, playlist: String, onPlay: () -> Unit, onAdd: () -> Unit) {
+internal fun SongRow(vm: PlayerViewModel, t: Track, playlist: String?, onPlay: () -> Unit, onAdd: () -> Unit) {
     val now = vm.currentTrack?.id == t.id
     val fav = vm.isFav(t.id)
     var menu by remember { mutableStateOf(false) }
@@ -235,7 +238,7 @@ private fun PlaylistRow(vm: PlayerViewModel, t: Track, playlist: String, onPlay:
                 DropdownMenuItem(text = { Text("Tocar a seguir") }, onClick = { vm.playNext(t); menu = false })
                 DropdownMenuItem(text = { Text("Adicionar à fila") }, onClick = { vm.addToQueue(t); menu = false })
                 DropdownMenuItem(text = { Text("Adicionar à lista...") }, onClick = { onAdd(); menu = false })
-                DropdownMenuItem(text = { Text("Remover desta lista") }, onClick = { vm.removeFromPlaylist(playlist, t.id); menu = false })
+                if (playlist != null) DropdownMenuItem(text = { Text("Remover desta lista") }, onClick = { vm.removeFromPlaylist(playlist, t.id); menu = false })
             }
         }
     }

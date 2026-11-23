@@ -21,8 +21,8 @@ import androidx.compose.ui.unit.sp
 import com.meuapp.player.PlayerViewModel
 
 /**
- * Ajustes: conta do Google, áudio (equalizador), atualização, músicas do aparelho, privacidade e "Avançado" (bastidores).
- * [startPage] abre direto numa página (5 = Músicas do aparelho).
+ * Ajustes: conta do Google, áudio (equalizador), atualização, privacidade e "Avançado" (bastidores).
+ * As músicas salvas no aparelho ficam na aba Biblioteca. [startPage] abre direto numa página.
  */
 @Composable
 fun SettingsScreen(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit, startPage: Int = 0) {
@@ -35,25 +35,23 @@ fun SettingsScreen(vm: PlayerViewModel, granted: Boolean, askPerm: () -> Unit, s
             PageHeader("TOXIC PLAYER", "Ajustes")
             SettingsRow(Icons.Rounded.Cloud, "Conta do Google", if (vm.cloud.connected) "Conectado: ${vm.cloud.accountEmail.ifBlank { "conta Google" }}" else "Entrar com o Google", false) { page = 1 }
             SettingsRow(Icons.Rounded.Tune, "Áudio e equalizador", "Equalizador, dinâmica, efeitos e presets", false) { page = 2 }
-            SettingsRow(Icons.Rounded.PhoneAndroid, "Músicas do aparelho", "As músicas salvas no seu celular", false) { page = 5 }
             SettingsRow(Icons.Rounded.SystemUpdate, "Atualização do app", "Versão instalada e novas versões", vm.update != null) { page = 3 }
             SettingsRow(Icons.Rounded.Lock, "Privacidade", "Apagar o que o app aprendeu sobre o que você ouve", false) { askClear = true }
             Spacer(Modifier.height(6.dp))
             Title("AVANÇADO")
-            SettingsRow(Icons.Rounded.Build, "Sincronização e armazenamento", "Sincronizar, importar playlists, cache e downloads", false) { page = 4 }
+            SettingsRow(Icons.Rounded.Build, "Sincronização e armazenamento", "Sincronizar, cache e downloads", false) { page = 4 }
         }
     } else {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.padding(start = 8.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { page = 0 }) { Icon(Icons.Rounded.ArrowBack, "Voltar para Ajustes", tint = Neon.Green) }
-                Text(when (page) { 1 -> "Conta do Google"; 2 -> "Áudio e equalizador"; 4 -> "Avançado"; 5 -> "Músicas do aparelho"; else -> "Atualização do app" }, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text(when (page) { 1 -> "Conta do Google"; 2 -> "Áudio e equalizador"; 4 -> "Avançado"; else -> "Atualização do app" }, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (page) {
                     1 -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp)) { CloudSettings(vm) }
                     2 -> MesaScreen(vm)
                     4 -> Box(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp)) { CloudSettings(vm, advanced = true) }
-                    5 -> LibraryScreen(vm, granted, askPerm) {}
                     else -> UpdateScreen(vm)
                 }
             }

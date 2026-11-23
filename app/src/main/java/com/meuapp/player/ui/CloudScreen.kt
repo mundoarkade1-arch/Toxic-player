@@ -43,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
@@ -70,9 +71,6 @@ import com.meuapp.player.cloud.CloudTrack
 import com.meuapp.player.cloud.MetaState
 import com.meuapp.player.cloud.SyncProgress
 
-/** Telas da nuvem que ficam fora do menu Ajustes: Início e Buscar. */
-enum class CloudMode { HOME, SEARCH }
-
 /** Login do Google (tela de consentimento). Fica no App, uma vez só, para funcionar em qualquer aba. */
 @Composable
 internal fun CloudAuthEffect(cloud: CloudManager) {
@@ -86,44 +84,78 @@ internal fun CloudAuthEffect(cloud: CloudManager) {
     }
 }
 
-/** Início (continuar ouvindo, playlists, mixes) e Buscar. [onNav] troca de aba (2 = Biblioteca). [onDevice] abre as músicas do aparelho. */
+/**
+ * Início: tudo do Drive. Sem conta conectada mostra o convite para entrar. [onDevice] abre a Biblioteca (músicas salvas no aparelho).
+ * Dentro dele ficam: a tela inicial, a lista de todas as músicas (com filtros), a lista de todas as playlists e a tela de cada playlist.
+ */
 @Composable
-fun CloudScreen(vm: PlayerViewModel, goPlayer: () -> Unit, mode: CloudMode = CloudMode.HOME, onNav: (Int) -> Unit = {}, onDevice: () -> Unit = {}) {
+fun CloudScreen(vm: PlayerViewModel, goPlayer: () -> Unit, onDevice: () -> Unit = {}) {
     val cloud = vm.cloud
-    Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp)) {
-            if (!cloud.connected) ConnectCard(cloud)
-            else if (mode == CloudMode.SEARCH) CloudSearch(vm, cloud, goPlayer)
-            else CloudHome(vm, cloud, goPlayer, onDevice, onOpenPlaylist = { name -> cloud.enterGroup(null); vm.openPlaylistRequest = name; onNav(2) }) { view, key -> cloud.changeView(view); cloud.enterGroup(key); onNav(2) }
-        }
+    if (!cloud.connected) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp)) { ConnectCard(cloud) }
+    } else {
+        DriveHub(vm, goPlayer, onDevice)
     }
 }
 
-/** Buscar: procura em toda a biblioteca do Drive. O menu de cada música guarda numa playlist sua. */
 @Composable
-private fun CloudSearch(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit) {
-    var q by remember { mutableStateOf("") }
-    val results = remember(cloud.tracks, q, cloud.folderPaths, cloud.online, cloud.offlineIds) {
-        if (q.isBlank()) emptyList()
-        else CloudLibrary.sort(CloudLibrary.filter(cloud.tracks, q, paths = cloud.folderPaths), CloudLibrary.SORT_TITLE)
-            .let { r -> if (cloud.online) r else r.filter { it.id in cloud.offlineIds } }   // sem internet: só o que está salvo
-            .take(200)
+private fun DriveHub(vm: PlayerViewModel, goPlayer: () -> Unit, onDevice: () -> Unit) {
+    val cloud = vm.cloud
+    var openPlaylist by remember { mutableStateOf<String?>(null) }
+    var page by remember { mutableIntStateOf(0) }          // 0 início, 1 todas as músicas, 2 todas as playlists
+    var query by remember { mutableStateOf("") }
+    var showFilters by remember { mutableStateOf(false) }
+
+    val detail = openPlaylist?.takeIf { vm.playlists.containsKey(it) }
+    if (detail != null) {
+        // Playlist aberta: tela cheia no estilo Spotify. O voltar leva de volta para onde o usuário estava.
+        BackHandler { openPlaylist = null }
+        PlaylistDetail(vm, detail, goPlayer) { openPlaylist = null }
+        return
     }
-    val playerList = remember(results, cloud.playerTracks) { results.mapNotNull { cloud.trackByNumericId(it.numericId) } }
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
-        item { PageHeader("BUSCAR", "O que você quer ouvir?") }
-        item { SearchField(q, { q = it }, "Música, artista, álbum ou pasta") }
-        if (q.isBlank()) {
-            item { EmptyState(Icons.Rounded.Search, "Digite para buscar no seu Drive. Nos três pontinhos de cada música você guarda ela numa playlist sua.") }
-        } else if (results.isEmpty()) {
-            item { EmptyState(Icons.Rounded.Search, "Nada encontrado para \"${q.trim()}\".") }
-        } else {
-            item { Text("Resultados · ${plural(results.size)}", fontSize = 13.sp, color = Neon.Dim) }
-            items(results.size, key = { results[it].id }) { i ->
-                CloudTrackRow(vm, cloud, results[i]) { vm.playList(playerList, i); goPlayer() }
+    BackHandler(enabled = page == 1 && cloud.openGroup != null) { cloud.enterGroup(null) }
+    BackHandler(enabled = page != 0 && !(page == 1 && cloud.openGroup != null)) { page = 0 }
+    BackHandler(enabled = page == 0 && query.isNotBlank()) { query = "" }
+
+    Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(top = 24.dp)) {
+        when (page) {
+            0 -> CloudHome(
+                vm, cloud, goPlayer, onDevice, query, { query = it },
+                onOpenPlaylist = { openPlaylist = it },
+                onSeePlaylists = { page = 2 },
+                onBrowse = { view, key -> cloud.changeView(view); if (key != null) cloud.enterGroup(key); page = 1 }
+            )
+            1 -> {
+                val title = when (cloud.viewMode) { 1 -> "Artistas"; 2 -> "Álbuns"; 3 -> "Gêneros"; 4 -> "Recentes"; 5 -> "Pastas"; else -> "Todas as músicas" }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { cloud.enterGroup(null); page = 0 }) { Icon(Icons.Rounded.ArrowBack, "Voltar", tint = Neon.Green) }
+                    Column(Modifier.weight(1f)) {
+                        Text("SEU DRIVE", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp, fontWeight = FontWeight.SemiBold)
+                        Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    IconButton(onClick = { showFilters = true }) {
+                        Icon(Icons.Rounded.Tune, "Filtros e ordem", tint = if (filtersActive(cloud)) Neon.Green else Neon.Dim)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                SearchField(cloud.query, cloud::changeQuery, "Buscar música, artista ou álbum")
+                Spacer(Modifier.height(10.dp))
+                DriveSongs(vm, cloud, goPlayer)
+            }
+            else -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { page = 0 }) { Icon(Icons.Rounded.ArrowBack, "Voltar", tint = Neon.Green) }
+                    Column(Modifier.weight(1f)) {
+                        Text("SEU DRIVE", color = Neon.Green, fontSize = 11.sp, letterSpacing = 3.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Playlists", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                PlaylistsSection(vm, goPlayer, "", null) { openPlaylist = it }
             }
         }
     }
+    if (showFilters) FiltersDialog(cloud) { showFilters = false }
 }
 
 @Composable
@@ -277,22 +309,12 @@ private fun AccountButtons(cloud: CloudManager, onDisconnect: () -> Unit) {
 /** Botões de bastidor (tudo isso já acontece sozinho; ficam aqui só para quem quiser forçar). */
 @Composable
 private fun MaintenanceButtons(vm: PlayerViewModel, cloud: CloudManager) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val jsonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
-            val text = withContext(Dispatchers.IO) { com.meuapp.player.SafeRead.readText(ctx, uri, 8 * 1024 * 1024) }
-            vm.importSmartPlaylistsJson(text)
-        }
-    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("O app já sincroniza sozinho. Use estes botões só se algo parecer desatualizado.", fontSize = 12.sp, color = Neon.Dim)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton("Sincronizar", Modifier.weight(1f)) { cloud.syncNow() }
             GhostButton("Atualizar biblioteca", Modifier.weight(1f)) { cloud.refreshLibrary() }
         }
-        GhostButton("Sincronizar playlists do Drive", Modifier.fillMaxWidth()) { vm.syncSmartPlaylistsNow() }
-        GhostButton("Importar playlists (.json)", Modifier.fillMaxWidth()) { jsonPicker.launch(arrayOf("application/json", "text/plain", "*/*")) }
     }
 }
 
@@ -394,7 +416,7 @@ private fun GroupCard(name: String, count: Int, icon: androidx.compose.ui.graphi
     GroupTile(name, count, icon, onClick)
 
 @Composable
-private fun CloudTrackRow(vm: PlayerViewModel, cloud: CloudManager, t: CloudTrack, onPlay: () -> Unit) {
+internal fun CloudTrackRow(vm: PlayerViewModel, cloud: CloudManager, t: CloudTrack, onPlay: () -> Unit) {
     val pt = remember(t, cloud.playerTracks) { cloud.trackByNumericId(t.numericId) }
     val now = vm.currentTrack?.cloudId == t.id
     val offline = t.id in cloud.offlineIds

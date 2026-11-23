@@ -25,6 +25,15 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 **(Texto antigo, já feito acima) Falta (telas, só com autorização):** botão "Importar playlists (.json)" ao lado do M3U (`ui/Screens.kt`, ~linha 422), botão "Sincronizar playlists do Drive" e o retorno destacado ("3 playlists atualizadas, +27 faixas, 4 não encontradas" + lista das não encontradas, que já está em `vm.smart.lastReport`). Hoje o resultado aparece na mensagem da aba Cloud.
 **Não validado:** build no Actions, leitura real do Drive, aparelho.
 
+## Visual líquido, Início do Drive, Biblioteca offline (2026-11-22) — código escrito, NÃO compilado, NÃO testado no aparelho
+- Abas: 0 Início (`ui/CloudScreen.kt` > `DriveHub`: página 0 `CloudHome`, 1 todas as músicas com filtros (`DriveSongs`), 2 grade de playlists (`PlaylistsSection`), e `PlaylistDetail` por cima), 1 Biblioteca (`ui/OfflineLibrary.kt`: baixadas + músicas do celular), 2 Ajustes. Buscar e `LibraryHub` foram removidos; `CloudMode` também.
+- `goPlayer` agora é real (`showPlayer = true` no `App`): tocar música abre o Player; o voltar minimiza.
+- `UpdatePrompt` (em `Screens.kt`): janela ao abrir se `vm.update != null`; "Depois" vale até fechar o app.
+- `Theme.kt`: `glass()` com brilho especular/reflexo/filete. `SearchField` com cores de vidro. `SongRow` (em `PlaylistDetail.kt`) é a linha de música compartilhada.
+- `FolderPlaylists.MIN_TRACKS = 20`. `runDailyDiscoveries` não cria mais nada; apaga "Descobertas do dia" com menos de 20. `cleanupOldSmart` também apaga playlists de pasta antigas que ficaram abaixo do mínimo (guarda os nomes em `made`).
+- Ícone: `res/drawable/ic_launcher_{background,foreground,monochrome}.xml` (disco de vidro + barras de equalizador).
+- Para validar: Actions verde; Início com busca e playlists sem texto cortado; tocar música abre o Player e o voltar minimiza; Biblioteca só com baixadas e músicas do celular; nenhuma playlist com menos de 20 músicas; janela de atualização ao abrir quando há versão nova; ícone novo.
+
 ## Só pastas viram playlist (2026-11-22) — código escrito, NÃO compilado, NÃO testado no aparelho
 - `SmartPlaylistManager` não lê mais o JSON do site/motor no Drive: `syncFromDrive` só refaz as playlists das pastas (`FolderPlaylists`). `withFolders` devolve só o arquivo das pastas. `importText` ficou desligado (aviso).
 - `FolderPlaylists.MIN_TRACKS = 5`: pasta com menos músicas não vira playlist.

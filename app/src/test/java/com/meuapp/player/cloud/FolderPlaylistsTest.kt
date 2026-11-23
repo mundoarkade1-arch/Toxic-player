@@ -61,7 +61,7 @@ class FolderPlaylistsTest {
     }
 
     @Test fun appliesAsNewPlaylistsAndNeverRemovesUserTracks() {
-        val lib = many("f1", 6)
+        val lib = many("f1", FolderPlaylists.MIN_TRACKS + 1)
         val paths = mapOf("f1" to "Música/Rock")
         val file = FolderPlaylists.build(lib, paths)!!
         // Primeira vez: cria a playlist com as faixas todas.

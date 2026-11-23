@@ -12,8 +12,8 @@ package com.meuapp.player.cloud
 object FolderPlaylists {
     const val ORIGIN = "Pasta"
     private const val MAX_NAME = 120
-    /** Pasta com menos músicas que isto NÃO vira playlist (evita playlist de 1 ou 2 músicas). */
-    const val MIN_TRACKS = 5
+    /** Pasta com menos músicas que isto NÃO vira playlist (decisão do usuário: no mínimo 20). */
+    const val MIN_TRACKS = 20
 
     /** [paths]: id da pasta -> caminho ("Música/Rock"), como o CloudRepository entrega. Devolve null se não há pasta com música. */
     fun build(library: List<CloudTrack>, paths: Map<String, String>): SmartFile? {
