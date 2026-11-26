@@ -41,6 +41,14 @@ class BiquadCoef(val b0: Double, val b1: Double, val b2: Double, val a1: Double,
     companion object {
         val IDENTITY = BiquadCoef(1.0, 0.0, 0.0, 0.0, 0.0)
 
+        /** Filtro de 1ª ordem (6 dB/oitava, transformada bilinear) como biquad com b2 = a2 = 0. -3 dB na frequência [freq]. */
+        fun firstOrder(lowPass: Boolean, freq: Double, sr: Double): BiquadCoef {
+            val k = kotlin.math.tan(PI * freq.coerceIn(20.0, 0.45 * sr) / sr)
+            val n = 1.0 + k
+            val a1 = (k - 1.0) / n
+            return if (lowPass) BiquadCoef(k / n, k / n, 0.0, a1, 0.0) else BiquadCoef(1.0 / n, -1.0 / n, 0.0, a1, 0.0)
+        }
+
         fun design(f: EqFilter, sr: Double): BiquadCoef {
             val freq = f.freq.toDouble().coerceIn(20.0, 0.45 * sr)
             val q = f.q.toDouble().coerceIn(0.1, 18.0)

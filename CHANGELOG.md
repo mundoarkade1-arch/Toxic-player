@@ -1,6 +1,12 @@
 # Changelog
 
 ## Não lançado
+### Adicionado/Corrigido (equalizador e processador de áudio de carro)
+- Os recursos de carro (corte de graves e agudos, grave virtual, sub-harmônico, limitador de graves, contorno, foco na voz, ar, graves em mono, atraso/ganho/polaridade) agora estão LIGADOS ao motor, ao salvamento (JSON) e à tela (nova aba **Carro** na Mesa de áudio). Antes o código existia, mas nada o usava.
+- Medidor **entrada x saída** (graves/médios/agudos em dB) e cartão de estado no topo da Mesa: mostra se os efeitos estão ligados, qual preset vale (**● ATIVO**), se o motor está processando o áudio e o formato; botão para comparar com/sem efeitos.
+- Presets de carro refeitos e medidos (o principal passou de ~+3 dB para ~+8 dB aos 60 Hz sobre os médios); o preset ativo continua marcado ao trocar de faixa e ao reabrir o app.
+- O processador agora aceita PCM 16/24/32 bits e float (antes ignorava 24 bits/float sem avisar).
+- Arquivos: `audio/DspCore.kt`, `Biquad.kt`, `AudioFx.kt`, `DspProcessor.kt`, `PcmCodec.kt` (novo), `CarDsp.kt`, `CarPresets.kt`, `presets/*.json`, `ui/Screens.kt`, `docs/AUDITORIA_EQUALIZADOR.md`. Motor, AudioFx e presets: 56 testes passando numa JVM de teste; tela e DspProcessor NÃO compilados, nada testado no aparelho.
 ### Corrigido (playlist sem capa)
 - A capa da playlist agora é refeita quando as capas da nuvem chegam (antes ficava presa no desenho genérico até a playlist mudar) e procura capa na playlist inteira, não só nas 60 primeiras músicas. O mosaico prefere álbuns diferentes. Se nenhuma música tem imagem embutida, continua o desenho genérico (degradê com as letras do nome). Arquivo: `ui/PlaylistsScreen.kt`. Ainda não compilado nem testado no aparelho.
 ### Alterado (visual líquido, Início do Drive, Biblioteca offline, player, atualização, ícone)

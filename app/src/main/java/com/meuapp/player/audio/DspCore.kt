@@ -15,7 +15,12 @@ data class Meters(
     val compGrDb: Float = 0f, val limGrDb: Float = 0f,
     val clip: Boolean = false,
     val levGainDb: Float = 0f,
-    val mbGrDb: Float = 0f
+    val mbGrDb: Float = 0f,
+    val bassLimGrDb: Float = 0f,             // redução do limitador de graves (proteção do alto-falante)
+    /** Medidor ENTRADA x SAÍDA: quantos dB o processamento mudou cada faixa (graves 40-160 Hz, médios 160 Hz-4 kHz, agudos > 4 kHz). */
+    val diffLowDb: Float = 0f, val diffMidDb: Float = 0f, val diffHighDb: Float = 0f,
+    val measured: Boolean = false,           // já passou áudio suficiente para a comparação valer
+    val frames: Long = 0L                    // quadros de áudio que já passaram pelo motor desde que o player abriu a faixa (prova de que está processando)
 )
 
 /** Todos os parâmetros do processamento. Imutável: a interface troca o objeto inteiro. */
@@ -50,7 +55,19 @@ data class DspParams(
     val mbThrL: Float = -24f, val mbThrM: Float = -24f, val mbThrH: Float = -24f,
     val mbRatio: Float = 3f, val mbAttackMs: Float = 15f, val mbReleaseMs: Float = 150f,
     val mbKneeDb: Float = 6f, val mbMakeupDb: Float = 0f,
-    val mbX1: Float = 250f, val mbX2: Float = 3000f
+    val mbX1: Float = 250f, val mbX2: Float = 3000f,
+    // ---- Recursos de som de carro ----
+    val hpfOn: Boolean = false, val hpfFreq: Float = 40f, val hpfSlope: Int = 24, val hpfType: XoverType = XoverType.LINKWITZ_RILEY,   // corte de graves (proteção subsônica)
+    val lpfOn: Boolean = false, val lpfFreq: Float = 16000f, val lpfSlope: Int = 12, val lpfType: XoverType = XoverType.LINKWITZ_RILEY, // corte de agudos
+    val vbOn: Boolean = false, val vbFreq: Float = 60f, val vbAmount: Float = 0.5f,          // grave virtual (harmônicos)
+    val subOn: Boolean = false, val subFreq: Float = 100f, val subAmount: Float = 0.5f,      // sub-harmônico (só com subwoofer)
+    val blOn: Boolean = false, val blFreq: Float = 120f, val blCeilDb: Float = -3f,          // limitador só dos graves
+    val delayLms: Float = 0f, val delayRms: Float = 0f,                                       // alinhamento de tempo
+    val trimLdb: Float = 0f, val trimRdb: Float = 0f, val invertR: Boolean = false,          // ganho por lado e polaridade
+    val monoBassOn: Boolean = false, val monoBassFreq: Float = 100f,                         // graves em mono
+    val contour: Float = 0f,                 // contorno de loudness 0..1 (graves e agudos extras)
+    val vocalFocus: Float = 0f,              // realce da voz no centro 0..1
+    val air: Float = 0f                      // realce de agudos ("ar") 0..1
 )
 
 /** Biquad com estado (usado nos cruzamentos do multibanda e no filtro do detector). */
@@ -85,6 +102,8 @@ class Quantizer {
  * pré-amp/balanço -> EQ gráfico (10 peaks) -> EQ paramétrico (até 16 filtros) ->
  * compressor (RMS/pico, joelho suave) -> largura estéreo (M/S) + crossfeed ->
  * limitador com look-ahead de 5 ms + proteção final no teto.
+ * Recursos de carro (CarDsp.kt): contorno, foco na voz, grave virtual, sub-harmônico, cortes (HPF/LPF), limitador de graves,
+ * "ar", graves em mono, alinhamento de tempo/ganho/polaridade e medidor entrada x saída.
  * Latência fixa de 5 ms (a linha de atraso do look-ahead fica sempre ativa).
  * O limitador NÃO é true-peak: trabalha em amostras (sample peak).
  */
@@ -95,6 +114,7 @@ class DspCore {
         const val MAX_PARAM = 16
         const val SLOTS = 10 + MAX_PARAM
         const val SPEC_N = 2048
+        const val MAX_DELAY_MS = 20f
     }
 
     @Volatile var params = DspParams()
@@ -136,6 +156,16 @@ class DspCore {
     private var mbAtt = 0.0; private var mbRel = 0.0; private var mbWasOn = false
     private var delay = Array(2) { FloatArray(240) }; private var dPos = 0
 
+    // ---- Recursos de carro ----
+    private val hpfC = Cascade(4); private val lpfC = Cascade(4)
+    private val contourC = Cascade(2); private val focusC = Cascade(1); private val monoHp = Cascade(2)
+    private val vb = VirtualBass(); private val sub = SubSynth(); private val air = AirExciter(); private val bl = BassLimiter()
+    private var alL = DelayLine(2); private var alR = DelayLine(2)
+    private var alSamL = 0; private var alSamR = 0
+    private var trimLLin = 1.0; private var trimRLin = 1.0
+    private val bmIn = BandMeter(); private val bmOut = BandMeter()
+    private var totalFrames = 0L
+
     private val specBuf = FloatArray(SPEC_N)
     @Volatile private var specPos = 0
 
@@ -152,6 +182,12 @@ class DspCore {
         histL.fill(0.0); histR.fill(0.0)
         for (chn in 0 until 2) { for (q in mb[chn]) q.reset(); sc[chn].reset() }
         mbPow.fill(0.0); mbGr.fill(0.0); mbWasOn = false
+        hpfC.reset(); lpfC.reset(); contourC.reset(); focusC.reset(); monoHp.reset()
+        vb.reset(); sub.reset(); air.reset(); bl.reset()
+        val dMax = (MAX_DELAY_MS * sr / 1000f).toInt() + 2
+        alL = DelayLine(dMax); alR = DelayLine(dMax)
+        bmIn.configure(sr.toDouble()); bmOut.configure(sr.toDouble()); bmIn.reset(); bmOut.reset()
+        totalFrames = 0L
         applied = null
     }
 
@@ -218,7 +254,46 @@ class DspCore {
         }
         levAttB = 1.0 - exp(-32.0 / (3.0 * sr))
         levRelB = 1.0 - exp(-32.0 / (8.0 * sr))
+        rebuildCar(p, srd)
         applied = p
+    }
+
+    /** Coeficientes dos recursos de carro. Um bloco que acabou de ligar começa com estado zerado (sem restos de antes). */
+    private fun rebuildCar(p: DspParams, srd: Double) {
+        val prev = applied
+        if (p.hpfOn) {
+            hpfC.set(Crossover.sections(true, p.hpfType, p.hpfSlope, p.hpfFreq.toDouble(), srd))
+            if (prev?.hpfOn != true) hpfC.reset()
+        }
+        if (p.lpfOn) {
+            lpfC.set(Crossover.sections(false, p.lpfType, p.lpfSlope, p.lpfFreq.toDouble(), srd))
+            if (prev?.lpfOn != true) lpfC.reset()
+        }
+        if (p.vbOn) { vb.configure(p.vbFreq.toDouble(), p.vbAmount.toDouble(), srd); if (prev?.vbOn != true) vb.reset() }
+        if (p.subOn) { sub.configure(p.subFreq.toDouble(), p.subAmount.toDouble(), srd); if (prev?.subOn != true) sub.reset() }
+        if (p.blOn) { bl.configure(p.blFreq.toDouble(), p.blCeilDb.toDouble(), srd); if (prev?.blOn != true) bl.reset() }
+        if (p.air > 0f) { air.configure(p.air.toDouble(), srd); if (prev == null || prev.air <= 0f) air.reset() }
+        if (p.contour > 0f) {
+            val c = p.contour.toDouble().coerceIn(0.0, 1.0)
+            contourC.set(listOf(
+                BiquadCoef.design(EqFilter(FilterType.LOW_SHELF, 100f, (9.0 * c).toFloat(), 0.7f), srd),
+                BiquadCoef.design(EqFilter(FilterType.HIGH_SHELF, 8000f, (4.0 * c).toFloat(), 0.7f), srd)
+            ))
+            if (prev == null || prev.contour <= 0f) contourC.reset()
+        }
+        if (p.vocalFocus > 0f) {
+            val f = p.vocalFocus.toDouble().coerceIn(0.0, 1.0)
+            focusC.set(listOf(BiquadCoef.design(EqFilter(FilterType.PEAK, 2800f, (5.0 * f).toFloat(), 0.9f), srd)))
+            if (prev == null || prev.vocalFocus <= 0f) focusC.reset()
+        }
+        if (p.monoBassOn) {
+            monoHp.set(Crossover.sections(true, XoverType.LINKWITZ_RILEY, 24, p.monoBassFreq.toDouble().coerceIn(40.0, 300.0), srd))
+            if (prev?.monoBassOn != true) monoHp.reset()
+        }
+        alSamL = Math.round(p.delayLms.coerceIn(0f, MAX_DELAY_MS) * srd / 1000.0).toInt()
+        alSamR = Math.round(p.delayRms.coerceIn(0f, MAX_DELAY_MS) * srd / 1000.0).toInt()
+        trimLLin = 10.0.pow(p.trimLdb.coerceIn(-24f, 6f) / 20.0)
+        trimRLin = 10.0.pow(p.trimRdb.coerceIn(-24f, 6f) / 20.0) * (if (p.invertR) -1.0 else 1.0)
     }
 
     /** Compressor de uma banda do multibanda: detector RMS ligado nos dois canais, joelho suave. Devolve o ganho linear. */
@@ -251,7 +326,7 @@ class DspCore {
         val width = p.width.toDouble()
         val k = 0.5 * p.crossfeed
         var pkL = 0f; var pkR = 0f; var sumL = 0.0; var sumR = 0.0
-        var clip = false; var maxComp = 0.0; var maxLim = 0.0; var maxMb = 0.0
+        var clip = false; var maxComp = 0.0; var maxLim = 0.0; var maxMb = 0.0; var maxBl = 0.0
         val mbRatio = max(p.mbRatio.toDouble(), 1.0)
         val mbKnee = max(p.mbKneeDb.toDouble(), 0.01)
 
@@ -262,6 +337,7 @@ class DspCore {
             if (!l.isFinite()) l = 0.0
             if (!r.isFinite()) r = 0.0
             val l0 = l; val r0 = r
+            bmIn.push(0.5 * (l0 + r0))
 
             if (enabled) {
                 l *= preLin * gL; r *= preLin * gR
@@ -291,6 +367,28 @@ class DspCore {
                     r = y
                 }
                 if (abs(l) >= 1.0 || abs(r) >= 1.0) clip = true
+
+                // ---- Recursos de carro (antes da dinâmica) ----
+                if (p.contour > 0f) { l = contourC.run(0, l); r = contourC.run(1, r) }
+                if (p.vocalFocus > 0f) {
+                    val m = 0.5 * (l + r); val sd = 0.5 * (l - r)
+                    val m2 = focusC.run(0, m)
+                    l = m2 + sd; r = m2 - sd
+                }
+                var extra = 0.0
+                if (p.vbOn || p.subOn) {
+                    val mono = 0.5 * (l + r)        // fonte dos graves: antes do corte, para o corte não apagar o que o grave virtual precisa
+                    if (p.vbOn) extra += vb.process(mono)
+                    if (p.subOn) extra += sub.process(mono)
+                }
+                if (p.hpfOn) { l = hpfC.run(0, l); r = hpfC.run(1, r) }
+                if (p.lpfOn) { l = lpfC.run(0, l); r = lpfC.run(1, r) }
+                if (extra != 0.0) { l += extra; r += extra }
+                if (p.blOn) {
+                    bl.process(l, r); l = bl.outL; r = bl.outR
+                    if (bl.maxGrDb > maxBl) maxBl = bl.maxGrDb
+                    bl.maxGrDb = 0.0
+                }
 
                 if (p.compOn) {
                     val dl: Double; val dr: Double
@@ -335,6 +433,12 @@ class DspCore {
                     if (worst > maxMb) maxMb = worst
                 }
 
+                if (p.air > 0f) { val a0 = air.process(0, l); val a1 = air.process(1, r); l += a0; r += a1 }
+                if (p.monoBassOn) {
+                    val m = 0.5 * (l + r); val s2 = monoHp.run(0, 0.5 * (l - r))
+                    l = m + s2; r = m - s2
+                }
+
                 if (c == 2) {
                     val m = 0.5 * (l + r)
                     val s = 0.5 * (l - r) * width
@@ -348,6 +452,10 @@ class DspCore {
                     }
                     l = l2; r = r2
                 }
+
+                // Alinhamento de tempo, ganho por lado e polaridade (por último, logo antes do limitador)
+                l = alL.process(l, alSamL) * trimLLin
+                r = alR.process(r, alSamR) * trimRLin
             }
 
             // Proteção: se algum filtro der resultado inválido, volta ao sinal original e zera os estados
@@ -386,12 +494,23 @@ class DspCore {
             val al = abs(ol).toFloat(); val ar = abs(orr).toFloat()
             if (al > pkL) pkL = al
             if (ar > pkR) pkR = ar
+            bmOut.push(0.5 * (ol + orr))
             sumL += ol * ol; sumR += orr * orr
             specBuf[specPos and (SPEC_N - 1)] = (0.5 * (ol + orr)).toFloat()
             specPos++
         }
         if (frames > 0) {
-            meters = Meters(pkL, pkR, sqrt(sumL / frames).toFloat(), sqrt(sumR / frames).toFloat(), maxComp.toFloat(), maxLim.toFloat(), clip, levGainDb.toFloat(), maxMb.toFloat())
+            totalFrames += frames
+            fun diff(i: Int): Float {
+                val a = bmIn.power(i); val b = bmOut.power(i)
+                return if (a > 1e-10) (10.0 * log10(max(b, 1e-14) / a)).toFloat().coerceIn(-40f, 40f) else 0f
+            }
+            val measured = totalFrames >= sr / 2 && bmIn.power(1) > 1e-8
+            meters = Meters(
+                pkL, pkR, sqrt(sumL / frames).toFloat(), sqrt(sumR / frames).toFloat(), maxComp.toFloat(), maxLim.toFloat(), clip,
+                levGainDb.toFloat(), maxMb.toFloat(), maxBl.toFloat(),
+                diff(0), diff(1), diff(2), measured, totalFrames
+            )
         }
     }
 

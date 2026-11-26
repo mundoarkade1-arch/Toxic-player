@@ -1,5 +1,8 @@
 # Estado do projeto
 
+## Equalizador / processador de carro (2026-11-26) — motor testado na JVM; tela e DspProcessor NÃO compilados
+Ver `docs/AUDITORIA_EQUALIZADOR.md`. Para validar: Actions verde; Mesa de áudio > aba Carro; aplicar um preset de carro e ver **● ATIVO**; tocar música e ver "Motor processando" e as barras graves/médios/agudos; "Comparar: ouvir sem efeitos"; FLAC 24 bits com efeito.
+
 ## Toxic Cloud — implementado (código escrito)
 Autorização Google (AuthorizationClient), cliente Drive v3 (list, changes, Range, download), leitores de tags por Range (ID3v1/v2, FLAC, Ogg Vorbis/Opus, MP4/M4A, WAV), índice JSON local, sincronização completa e incremental (Changes), streaming com cache LRU em disco, downloads offline com verificação de tamanho e MD5, aba Cloud (conta, sincronizar, filtros, busca, ordenação, indicadores, cache, offline), tratamento de erros em português.
 

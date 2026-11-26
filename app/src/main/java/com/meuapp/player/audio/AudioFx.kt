@@ -167,6 +167,19 @@ object AudioFx {
     var levelerOn by mutableStateOf(false)
     var levelerTarget by mutableFloatStateOf(-16f)
     var ditherOn by mutableStateOf(true)
+    // ---- Som de carro ----
+    var hpfOn by mutableStateOf(false); var hpfFreq by mutableFloatStateOf(40f)
+    var hpfSlope by mutableStateOf(24); var hpfType by mutableStateOf(XoverType.LINKWITZ_RILEY)
+    var lpfOn by mutableStateOf(false); var lpfFreq by mutableFloatStateOf(16000f)
+    var lpfSlope by mutableStateOf(12); var lpfType by mutableStateOf(XoverType.LINKWITZ_RILEY)
+    var vbOn by mutableStateOf(false); var vbFreq by mutableFloatStateOf(60f); var vbAmount by mutableFloatStateOf(0.5f)
+    var subOn by mutableStateOf(false); var subFreq by mutableFloatStateOf(100f); var subAmount by mutableFloatStateOf(0.5f)
+    var blOn by mutableStateOf(false); var blFreq by mutableFloatStateOf(120f); var blCeil by mutableFloatStateOf(-3f)
+    var delayL by mutableFloatStateOf(0f); var delayR by mutableFloatStateOf(0f)
+    var trimL by mutableFloatStateOf(0f); var trimR by mutableFloatStateOf(0f); var invertR by mutableStateOf(false)
+    var monoBassOn by mutableStateOf(false); var monoBassFreq by mutableFloatStateOf(100f)
+    var contour by mutableFloatStateOf(0f); var vocalFocus by mutableFloatStateOf(0f); var air by mutableFloatStateOf(0f)
+    /** Nome do preset em uso ("Personalizado" quando o usuário mexeu em algum controle depois de aplicar). */
     var activeName by mutableStateOf("Personalizado")
     var currentRoute by mutableStateOf("speaker")
     val routeProfiles = mutableStateMapOf<String, String>()
@@ -193,6 +206,7 @@ object AudioFx {
             val ks = rj.keys()
             while (ks.hasNext()) { val k = ks.next(); routeProfiles[k] = rj.optString(k, "") }
         } catch (e: Exception) { }
+        activeName = p.getString("active", "Personalizado") ?: "Personalizado"   // o mesmo preset continua marcado depois de reabrir o app
         DspEngine.core.params = buildParams()
     }
 
@@ -225,7 +239,20 @@ object AudioFx {
         put("mbMk", mbMakeup.toDouble()); put("mbX1", mbX1.toDouble()); put("mbX2", mbX2.toDouble()); put("scHpf", compScHpf.toDouble())
         put("bass", bassPct.toDouble()); put("virt", virtPct.toDouble())
         put("tp", truePeak); put("lev", levelerOn); put("levT", levelerTarget.toDouble()); put("dith", ditherOn)
+        put("hpfOn", hpfOn); put("hpfF", hpfFreq.toDouble()); put("hpfS", hpfSlope); put("hpfT", hpfType.name)
+        put("lpfOn", lpfOn); put("lpfF", lpfFreq.toDouble()); put("lpfS", lpfSlope); put("lpfT", lpfType.name)
+        put("vbOn", vbOn); put("vbF", vbFreq.toDouble()); put("vbA", vbAmount.toDouble())
+        put("subOn", subOn); put("subF", subFreq.toDouble()); put("subA", subAmount.toDouble())
+        put("blOn", blOn); put("blF", blFreq.toDouble()); put("blC", blCeil.toDouble())
+        put("dL", delayL.toDouble()); put("dR", delayR.toDouble()); put("tL", trimL.toDouble()); put("tR", trimR.toDouble()); put("invR", invertR)
+        put("monoOn", monoBassOn); put("monoF", monoBassFreq.toDouble())
+        put("contour", contour.toDouble()); put("focus", vocalFocus.toDouble()); put("air", air.toDouble())
     }
+
+    /** Inclinação válida mais próxima (17 vira 18). */
+    private fun nearestSlope(v: Int) = Crossover.SLOPES.minByOrNull { abs(it - v) } ?: 24
+    private fun JSONObject.xo(k: String): XoverType =
+        try { XoverType.valueOf(optString(k, "LINKWITZ_RILEY")) } catch (e: Exception) { XoverType.LINKWITZ_RILEY }
 
     private fun restore(j: JSONObject) {
         // Todos os valores vêm de arquivo/preferências (não confiáveis): cada um é limitado à mesma faixa dos controles da tela.
@@ -260,6 +287,17 @@ object AudioFx {
         bassPct = j.f("bass", 0f, 0f, 100f); virtPct = j.f("virt", 0f, 0f, 100f)
         truePeak = j.optBoolean("tp", true); levelerOn = j.optBoolean("lev", false)
         levelerTarget = j.f("levT", -16f, -24f, -10f); ditherOn = j.optBoolean("dith", true)
+        hpfOn = j.optBoolean("hpfOn", false); hpfFreq = j.f("hpfF", 40f, 20f, 250f)
+        hpfSlope = nearestSlope(j.optInt("hpfS", 24)); hpfType = j.xo("hpfT")
+        lpfOn = j.optBoolean("lpfOn", false); lpfFreq = j.f("lpfF", 16000f, 1000f, 20000f)
+        lpfSlope = nearestSlope(j.optInt("lpfS", 12)); lpfType = j.xo("lpfT")
+        vbOn = j.optBoolean("vbOn", false); vbFreq = j.f("vbF", 60f, 30f, 120f); vbAmount = j.f("vbA", 0.5f, 0f, 1f)
+        subOn = j.optBoolean("subOn", false); subFreq = j.f("subF", 100f, 50f, 200f); subAmount = j.f("subA", 0.5f, 0f, 1f)
+        blOn = j.optBoolean("blOn", false); blFreq = j.f("blF", 120f, 60f, 250f); blCeil = j.f("blC", -3f, -24f, 0f)
+        delayL = j.f("dL", 0f, 0f, DspCore.MAX_DELAY_MS); delayR = j.f("dR", 0f, 0f, DspCore.MAX_DELAY_MS)
+        trimL = j.f("tL", 0f, -24f, 6f); trimR = j.f("tR", 0f, -24f, 6f); invertR = j.optBoolean("invR", false)
+        monoBassOn = j.optBoolean("monoOn", false); monoBassFreq = j.f("monoF", 100f, 40f, 300f)
+        contour = j.f("contour", 0f, 0f, 1f); vocalFocus = j.f("focus", 0f, 0f, 1f); air = j.f("air", 0f, 0f, 1f)
     }
 
     private fun sanitize(f: EqFilter) = f.copy(
@@ -286,7 +324,7 @@ object AudioFx {
         if (!j.has(n) && j.length() >= MAX_CUSTOM) return
         j.put(n, snapshot()); writeCustom(j)
     }
-    fun loadCustom(name: String) { customJson().optJSONObject(name)?.let { restore(it); apply(); activeName = name } }
+    fun loadCustom(name: String) { customJson().optJSONObject(name)?.let { restore(it); apply(); setActive(name) } }
     fun deleteCustom(name: String) { val j = customJson(); j.remove(name); writeCustom(j) }
     fun duplicateCustom(name: String) {
         val j = customJson(); val o = j.optJSONObject(name) ?: return
@@ -300,14 +338,45 @@ object AudioFx {
     /** Liga/desliga todos os efeitos sem perder o nome do preset ativo. */
     fun setFade(v: Float) { fadeSec = v; prefs?.edit()?.putFloat("fade", v)?.apply() }
 
-    fun setMasterEnabled(v: Boolean) { val n = activeName; enabled = v; apply(); activeName = n }
+    fun setMasterEnabled(v: Boolean) { val n = activeName; enabled = v; apply(); setActive(n) }
 
+    /** Marca qual preset está valendo e guarda, para continuar marcado depois de fechar e abrir o app. Qualquer [apply] volta para "Personalizado". */
+    private fun setActive(name: String) {
+        activeName = name
+        prefs?.edit()?.putString("active", name)?.apply()
+    }
+
+    /** Preset do EQ gráfico: parte do zero (nada herdado de preset de carro), liga a chave geral e o EQ. */
     fun applyPreset(name: String) {
         val v = PRESETS[name] ?: return
+        restore(JSONObject())
         for (i in 0 until 10) bands[i] = v[i]
         apply()
-        activeName = name
+        setActive(name)
     }
+
+    /** Aplica um preset de carro pronto ([CarPresets]). Devolve false se o nome não existe. */
+    fun applyCarPreset(name: String): Boolean {
+        val txt = CarPresets.ALL[name] ?: return false
+        return try { restore(JSONObject(txt)); apply(); setActive(name); true } catch (e: Exception) { false }
+    }
+
+    /** O preset [name] está valendo agora? Só com a chave geral ligada e sem nenhum controle mexido depois de aplicar. */
+    fun isActive(name: String): Boolean = enabled && activeName == name
+
+    /** Zera só os recursos de carro (cortes, grave virtual, alinhamento...). O EQ e os filtros ficam como estão. */
+    fun resetCar() {
+        hpfOn = false; hpfFreq = 40f; hpfSlope = 24; hpfType = XoverType.LINKWITZ_RILEY
+        lpfOn = false; lpfFreq = 16000f; lpfSlope = 12; lpfType = XoverType.LINKWITZ_RILEY
+        vbOn = false; vbFreq = 60f; vbAmount = 0.5f
+        subOn = false; subFreq = 100f; subAmount = 0.5f
+        blOn = false; blFreq = 120f; blCeil = -3f
+        delayL = 0f; delayR = 0f; trimL = 0f; trimR = 0f; invertR = false
+        monoBassOn = false; monoBassFreq = 100f
+        contour = 0f; vocalFocus = 0f; air = 0f
+        apply()
+    }
+
     fun resetAll() {
         restore(JSONObject()); apply()
     }
@@ -321,7 +390,9 @@ object AudioFx {
         val j = JSONObject(text)
         val c = j.optJSONObject("custom")
         val isBackup = c != null || j.optString("toxic") == "backup"
-        val knownKeys = setOf("toxic", "eq", "filters", "enabled", "eqOn", "paramOn", "pre", "auto", "bal", "width", "cross", "loud", "compOn", "thr", "ratio", "att", "rel", "knee", "mk", "rms", "limOn", "limThr", "limRel", "mbcOn", "mbcRatio", "mbL", "mbM", "mbH", "mbAtt", "mbRel", "mbKnee", "mbMk", "mbX1", "mbX2", "scHpf", "bass", "virt", "tp", "lev", "levT", "dith", "custom", "current")
+        val knownKeys = setOf("toxic", "eq", "filters", "enabled", "eqOn", "paramOn", "pre", "auto", "bal", "width", "cross", "loud", "compOn", "thr", "ratio", "att", "rel", "knee", "mk", "rms", "limOn", "limThr", "limRel", "mbcOn", "mbcRatio", "mbL", "mbM", "mbH", "mbAtt", "mbRel", "mbKnee", "mbMk", "mbX1", "mbX2", "scHpf", "bass", "virt", "tp", "lev", "levT", "dith",
+            "hpfOn", "hpfF", "hpfS", "hpfT", "lpfOn", "lpfF", "lpfS", "lpfT", "vbOn", "vbF", "vbA", "subOn", "subF", "subA", "blOn", "blF", "blC",
+            "dL", "dR", "tL", "tR", "invR", "monoOn", "monoF", "contour", "focus", "air", "custom", "current")
         if (j.keys().asSequence().none { it in knownKeys }) return "Este JSON não parece ser um preset ou backup do Toxic Player."
         if (isBackup) {
             if (c == null) return "Backup inválido: seção de perfis ausente."
@@ -335,13 +406,13 @@ object AudioFx {
                 mine.put(name, o); n++
             }
             writeCustom(mine)
-            j.optJSONObject("current")?.let { restore(it); apply(); activeName = "Importado" }
+            j.optJSONObject("current")?.let { restore(it); apply(); setActive("Importado") }
             "Backup restaurado: $n perfis"
         } else {
             // Exige ao menos um campo de áudio reconhecido para não aplicar um JSON aleatório como perfil vazio.
             if (!j.has("eq") && !j.has("filters") && !j.has("pre") && !j.has("eqOn") && !j.has("paramOn"))
                 return "Preset inválido: não encontrei ajustes de áudio."
-            restore(j); apply(); activeName = "Importado"; "Preset carregado com sucesso."
+            restore(j); apply(); setActive("Importado"); "Preset carregado com sucesso."
         }
         } catch (e: Exception) { "Não foi possível importar: JSON inválido (${e.message ?: "erro de leitura"})." }
     }
@@ -383,6 +454,12 @@ object AudioFx {
         if (paramOn) filters.forEach { f ->
             if (f.enabled && (!f.type.usesGain || abs(f.gainDb) > 0.01f)) list.add(BiquadCoef.design(f, sr))
         }
+        if (hpfOn) list.addAll(Crossover.sections(true, hpfType, hpfSlope, hpfFreq.toDouble(), sr))
+        if (lpfOn) list.addAll(Crossover.sections(false, lpfType, lpfSlope, lpfFreq.toDouble(), sr))
+        if (contour > 0f) {
+            list.add(BiquadCoef.design(EqFilter(FilterType.LOW_SHELF, 100f, 9f * contour, 0.7f), sr))
+            list.add(BiquadCoef.design(EqFilter(FilterType.HIGH_SHELF, 8000f, 4f * contour, 0.7f), sr))
+        }
         return FloatArray(points) { i ->
             val f = 20.0 * 1000.0.pow(i / (points - 1.0))
             var db = 0.0
@@ -402,7 +479,14 @@ object AudioFx {
         truePeak = truePeak, levelerOn = levelerOn, levelerTargetDb = levelerTarget, ditherOn = ditherOn,
         compScHpf = compScHpf, mbOn = mbcOn, mbThrL = mbThrL, mbThrM = mbThrM, mbThrH = mbThrH,
         mbRatio = mbcRatio, mbAttackMs = mbAttack, mbReleaseMs = mbRelease, mbKneeDb = mbKnee, mbMakeupDb = mbMakeup,
-        mbX1 = mbX1, mbX2 = mbX2
+        mbX1 = mbX1, mbX2 = mbX2,
+        hpfOn = hpfOn, hpfFreq = hpfFreq, hpfSlope = hpfSlope, hpfType = hpfType,
+        lpfOn = lpfOn, lpfFreq = lpfFreq, lpfSlope = lpfSlope, lpfType = lpfType,
+        vbOn = vbOn, vbFreq = vbFreq, vbAmount = vbAmount, subOn = subOn, subFreq = subFreq, subAmount = subAmount,
+        blOn = blOn, blFreq = blFreq, blCeilDb = blCeil,
+        delayLms = delayL, delayRms = delayR, trimLdb = trimL, trimRdb = trimR, invertR = invertR,
+        monoBassOn = monoBassOn, monoBassFreq = monoBassFreq,
+        contour = contour, vocalFocus = vocalFocus, air = air
     )
 
     /** Chamado pelo player quando o id da sessão de áudio muda (efeitos do sistema). */
@@ -413,11 +497,14 @@ object AudioFx {
         try { bass = BassBoost(0, session) } catch (e: Exception) { }
         try { virt = Virtualizer(0, session) } catch (e: Exception) { }
         ready = true
+        val n = activeName   // a troca de faixa/sessão só reaplica os efeitos do sistema: o preset continua marcado
         apply()
+        setActive(n)
     }
 
     fun apply() {
         activeName = "Personalizado"
+        prefs?.edit()?.putString("active", "Personalizado")?.apply()
         save()
         DspEngine.core.params = buildParams()
         try { boost?.let { it.setEnabled(enabled && loudness > 0f); it.setTargetGain((loudness.coerceIn(0f, 10f) * 100).toInt()) } } catch (e: Exception) { }

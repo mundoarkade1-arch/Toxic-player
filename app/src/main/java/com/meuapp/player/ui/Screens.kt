@@ -49,6 +49,9 @@ import com.meuapp.player.FAVORITES
 import com.meuapp.player.PlayerViewModel
 import com.meuapp.player.Track
 import com.meuapp.player.audio.AudioFx
+import com.meuapp.player.audio.CarPresets
+import com.meuapp.player.audio.Crossover
+import com.meuapp.player.audio.XoverType
 import com.meuapp.player.audio.DspCore
 import com.meuapp.player.audio.DspEngine
 import com.meuapp.player.audio.EqFilter
@@ -930,14 +933,16 @@ fun MesaScreen(vm: PlayerViewModel) {
         if (!AudioFx.ready) {
             Text("Toque uma música para ativar os efeitos do sistema.", color = Neon.Dim, fontSize = 12.sp, modifier = Modifier.padding(bottom = 8.dp))
         }
-        SegmentedTabs(listOf("EQ", "Dinâmica", "Efeitos", "Presets"), sec) { sec = it }
+        SegmentedTabs(listOf("EQ", "Carro", "Dinâmica", "Efeitos", "Presets"), sec) { sec = it }
         Spacer(Modifier.height(12.dp))
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatusCard()
             MetersCard()
             when (sec) {
                 0 -> EqSection()
-                1 -> DynSection()
-                2 -> FxSection(vm)
+                1 -> CarSection()
+                2 -> DynSection()
+                3 -> FxSection(vm)
                 else -> PresetSection()
             }
             Spacer(Modifier.height(12.dp))
@@ -1253,6 +1258,188 @@ private fun FxSection(vm: PlayerViewModel) {
     GhostButton("Resetar todos os ajustes de áudio", Modifier.fillMaxWidth()) { AudioFx.resetAll() }
 }
 
+
+// ---- Estado em tempo real: o preset está valendo? O motor está processando? O que mudou no som? ----
+/** Barra centrada em 0 dB: para a direita = reforço, para a esquerda = corte. Escala de ±12 dB. */
+@Composable
+private fun DiffBar(label: String, db: Float) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 11.sp, color = Neon.Dim, modifier = Modifier.width(112.dp))
+        Canvas(Modifier.weight(1f).height(10.dp)) {
+            val mid = size.width / 2f
+            drawRect(Color.White.copy(alpha = 0.10f), Offset.Zero, size)
+            val len = (kotlin.math.abs(db).coerceAtMost(12f) / 12f) * mid
+            val color = if (db >= 0f) Neon.Green else Neon.Danger.copy(alpha = 0.8f)
+            if (db >= 0f) drawRect(color, Offset(mid, 0f), Size(len, size.height)) else drawRect(color, Offset(mid - len, 0f), Size(len, size.height))
+            drawRect(Color.White.copy(alpha = 0.5f), Offset(mid - 0.5f, 0f), Size(1f, size.height))
+        }
+        Text("%+.1f dB".format(db), fontSize = 12.sp, color = Neon.Green, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(64.dp), textAlign = TextAlign.End)
+    }
+}
+
+/** Mostra, sem depender do ouvido, se os efeitos estão ligados, qual preset vale e quanto o som realmente mudou (entrada x saída). */
+@Composable
+private fun StatusCard() {
+    var m by remember { mutableStateOf(Meters()) }
+    var flowing by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        var last = DspEngine.core.meters.frames
+        while (true) {
+            delay(300)
+            val cur = DspEngine.core.meters
+            flowing = cur.frames != last
+            last = cur.frames
+            m = cur
+        }
+    }
+    val on = AudioFx.enabled
+    val custom = AudioFx.activeName == "Personalizado"
+    val title = when {
+        !on -> "EFEITOS DESLIGADOS"
+        custom -> "EFEITOS LIGADOS · Personalizado"
+        else -> "EFEITOS LIGADOS · ${AudioFx.activeName}"
+    }
+    val sub = when {
+        !on -> "Você está ouvindo o som original, sem nenhum ajuste."
+        custom -> "Ajustes feitos por você (nenhum preset pronto está valendo sem mudanças)."
+        else -> "Preset em uso, sem alterações."
+    }
+    Column(Modifier.fillMaxWidth().glass(22.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(10.dp).clip(CircleShape).background(if (on) Neon.Green else Neon.Faint))
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (on) Neon.Green else Neon.Dim, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Text(sub, fontSize = 11.sp, color = Neon.Dim)
+        val engine = when {
+            flowing && DspEngine.inChain -> "Motor processando o áudio agora · ${DspEngine.formatInfo}" to Neon.Green
+            !DspEngine.inChain && DspEngine.formatInfo.isNotEmpty() -> DspEngine.formatInfo to Neon.Danger
+            else -> "Nenhum áudio passando pelo motor. Toque uma música para ouvir e medir o efeito." to Neon.Dim
+        }
+        Text(engine.first, fontSize = 11.sp, color = engine.second)
+        if (on && flowing && m.measured) {
+            Text("O QUE MUDOU NO SOM (saída comparada com a entrada)", fontSize = 10.sp, letterSpacing = 1.sp, color = Neon.Faint, modifier = Modifier.padding(top = 4.dp))
+            DiffBar("Graves 40–160 Hz", m.diffLowDb)
+            DiffBar("Médios 160–4k Hz", m.diffMidDb)
+            DiffBar("Agudos > 4 kHz", m.diffHighDb)
+            if (m.bassLimGrDb > 0.5f) Text("Limitador de graves segurando ${"%.1f".format(m.bassLimGrDb)} dB (protege o alto-falante)", fontSize = 11.sp, color = Neon.Dim)
+            Text("Se os graves sobem aqui e você não sente, o limite é o alto-falante ou o volume: alto-falante de porta quase não toca abaixo de 50 Hz.", fontSize = 10.sp, color = Neon.Faint)
+        } else if (on && flowing) {
+            Text("Medindo a diferença entre entrada e saída…", fontSize = 11.sp, color = Neon.Faint)
+        }
+        GhostButton(if (on) "Comparar: ouvir SEM efeitos" else "Voltar a ouvir COM efeitos", Modifier.fillMaxWidth()) { AudioFx.setMasterEnabled(!on) }
+    }
+}
+
+// ---- Carro: processador de áudio (cortes, grave virtual, limitador de graves, alinhamento...) ----
+@Composable
+private fun CutPanel(
+    title: String, subtitle: String, on: Boolean, onToggle: (Boolean) -> Unit,
+    freq: Float, freqRange: ClosedFloatingPointRange<Float>, onFreq: (Float) -> Unit,
+    slope: Int, onSlope: (Int) -> Unit, type: XoverType, onType: (XoverType) -> Unit, freqHint: String
+) {
+    Panel(title, subtitle, on, onToggle) {
+        Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            XoverType.values().forEach { t -> Chip(t.label, type == t) { onType(t) } }
+        }
+        Text("Inclinação (dB por oitava)", fontSize = 12.sp, color = Neon.Dim)
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Crossover.SLOPES.filter { type == XoverType.BUTTERWORTH || it % 12 == 0 }.forEach { sl -> Chip("$sl", slope == sl) { onSlope(sl) } }
+        }
+        SliderRow("Frequência de corte", freq, freqRange, "Hz", 0, hint = freqHint) { onFreq(it) }
+    }
+}
+
+@Composable
+private fun CarSection() {
+    Column(Modifier.fillMaxWidth().glass(22.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Title("PROCESSADOR DE ÁUDIO DE CARRO")
+        Text(
+            "Tudo aqui age no som que o celular manda para o rádio (2 canais: esquerdo e direito). Cortes, grave virtual e limitador protegem " +
+                "alto-falantes comuns de porta e ainda deixam o grave mais presente. A divisão em vias (kit 2 vias, subwoofer com canal próprio) " +
+                "é feita pelo seu amplificador ou rádio: aqui o app prepara o sinal.",
+            fontSize = 11.sp, color = Neon.Dim
+        )
+    }
+    CutPanel(
+        "CORTE DE GRAVES (PASSA-ALTAS)", "Protege o alto-falante de porta de graves que ele não aguenta",
+        AudioFx.hpfOn, { AudioFx.hpfOn = it; AudioFx.apply() },
+        AudioFx.hpfFreq, 20f..250f, { AudioFx.hpfFreq = it; AudioFx.apply() },
+        AudioFx.hpfSlope, { AudioFx.hpfSlope = it; AudioFx.apply() },
+        AudioFx.hpfType, { AudioFx.hpfType = it; AudioFx.hpfSlope = Crossover.effectiveSlope(it, AudioFx.hpfSlope); AudioFx.apply() },
+        "Porta comum: 38 a 50 Hz. Com subwoofer: 25 a 30 Hz."
+    )
+    Panel("GRAVE VIRTUAL", "Cria harmônicos dos graves fundos: o ouvido percebe mais grave sem o cone se mexer tanto", AudioFx.vbOn, { AudioFx.vbOn = it; AudioFx.apply() }) {
+        SliderRow("Quantidade", AudioFx.vbAmount, 0f..1f, "", 2, hint = "0,4 a 0,7 é o ponto bom") { AudioFx.vbAmount = it; AudioFx.apply() }
+        SliderRow("Pega graves abaixo de", AudioFx.vbFreq, 30f..120f, "Hz", 0, hint = "Quanto mais alto, mais grave virtual (e mais artificial)") { AudioFx.vbFreq = it; AudioFx.apply() }
+    }
+    Panel("LIMITADOR DE GRAVES", "Segura só os graves no teto; voz e instrumentos continuam inteiros", AudioFx.blOn, { AudioFx.blOn = it; AudioFx.apply() }) {
+        SliderRow("Teto dos graves", AudioFx.blCeil, -24f..0f, "dB", 1, hint = "Mais baixo = protege mais e vibra menos. -3 a -5 dB é o ponto bom") { AudioFx.blCeil = it; AudioFx.apply() }
+        SliderRow("Faixa limitada (até)", AudioFx.blFreq, 60f..250f, "Hz", 0) { AudioFx.blFreq = it; AudioFx.apply() }
+    }
+    Panel("VOZ, BRILHO E LOUDNESS", "Realces suaves por cima do EQ") {
+        SliderRow("Foco na voz", AudioFx.vocalFocus, 0f..1f, "", 2, hint = "Realça a região da voz (2,8 kHz) só no centro, sem mexer nos lados") { AudioFx.vocalFocus = it; AudioFx.apply() }
+        SliderRow("Ar (brilho nos agudos)", AudioFx.air, 0f..1f, "", 2, hint = "Gera harmônicos acima de 8 kHz; bom para alto-falante que perde agudo") { AudioFx.air = it; AudioFx.apply() }
+        SliderRow("Contorno de loudness", AudioFx.contour, 0f..1f, "", 2, hint = "Mais grave e agudo quando você ouve baixinho") { AudioFx.contour = it; AudioFx.apply() }
+    }
+    Panel("GRAVES EM MONO", "Deixa os graves iguais nos dois lados (mais firmes e centrados)", AudioFx.monoBassOn, { AudioFx.monoBassOn = it; AudioFx.apply() }, startOpen = false) {
+        SliderRow("Mono abaixo de", AudioFx.monoBassFreq, 40f..300f, "Hz", 0) { AudioFx.monoBassFreq = it; AudioFx.apply() }
+    }
+    Panel("ALINHAMENTO DE TEMPO E GANHO", "Acerta o som para quem está sentado no banco do motorista", startOpen = false) {
+        Text("Cada 1 ms de atraso equivale a cerca de 34 cm de caminho do som. Atrase o lado MAIS PERTO de você.", fontSize = 11.sp, color = Neon.Dim)
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip("Motorista (esquerda)") { AudioFx.delayL = 1.5f; AudioFx.delayR = 0f; AudioFx.apply() }
+            Chip("Passageiro (direita)") { AudioFx.delayL = 0f; AudioFx.delayR = 1.5f; AudioFx.apply() }
+            Chip("Centro") { AudioFx.delayL = 0f; AudioFx.delayR = 0f; AudioFx.apply() }
+        }
+        SliderRow("Atraso esquerdo", AudioFx.delayL, 0f..DspCore.MAX_DELAY_MS, "ms", 2) { AudioFx.delayL = it; AudioFx.apply() }
+        SliderRow("Atraso direito", AudioFx.delayR, 0f..DspCore.MAX_DELAY_MS, "ms", 2) { AudioFx.delayR = it; AudioFx.apply() }
+        SliderRow("Ganho esquerdo", AudioFx.trimL, -24f..6f, "dB", 1) { AudioFx.trimL = it; AudioFx.apply() }
+        SliderRow("Ganho direito", AudioFx.trimR, -24f..6f, "dB", 1) { AudioFx.trimR = it; AudioFx.apply() }
+        SwitchRow("Inverter polaridade do lado direito", "Só se um lado estiver ligado ao contrário no carro", AudioFx.invertR) { AudioFx.invertR = it; AudioFx.apply() }
+    }
+    Panel("CORTE DE AGUDOS (PASSA-BAIXAS)", "Para tirar chiado ou limitar a faixa", AudioFx.lpfOn, { AudioFx.lpfOn = it; AudioFx.apply() }, startOpen = false) {
+        Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            XoverType.values().forEach { t -> Chip(t.label, AudioFx.lpfType == t) { AudioFx.lpfType = t; AudioFx.lpfSlope = Crossover.effectiveSlope(t, AudioFx.lpfSlope); AudioFx.apply() } }
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Crossover.SLOPES.filter { AudioFx.lpfType == XoverType.BUTTERWORTH || it % 12 == 0 }.forEach { sl -> Chip("$sl dB", AudioFx.lpfSlope == sl) { AudioFx.lpfSlope = sl; AudioFx.apply() } }
+        }
+        SliderRow("Frequência de corte", AudioFx.lpfFreq, 1000f..20000f, "Hz", 0) { AudioFx.lpfFreq = it; AudioFx.apply() }
+    }
+    Panel("SUB-HARMÔNICO (SÓ COM SUBWOOFER)", "Gera uma oitava abaixo dos graves. Em alto-falante de porta, deixe desligado", AudioFx.subOn, { AudioFx.subOn = it; AudioFx.apply() }, startOpen = false) {
+        SliderRow("Quantidade", AudioFx.subAmount, 0f..1f, "", 2) { AudioFx.subAmount = it; AudioFx.apply() }
+        SliderRow("Gera a partir de graves até", AudioFx.subFreq, 50f..200f, "Hz", 0) { AudioFx.subFreq = it; AudioFx.apply() }
+    }
+    GhostButton("Zerar só os ajustes de carro (EQ fica como está)", Modifier.fillMaxWidth()) { AudioFx.resetCar() }
+}
+
+private val CAR_PRESET_INFO = mapOf(
+    "Toxic Carro · Grave Forte + Voz" to "O seu: grave forte e vibrante (60 a 100 Hz) com voz e instrumentos bem à frente. Para alto-falante de porta, sem subwoofer.",
+    "Toxic Carro · Vibração Máxima" to "Grave bem mais forte e com mais grave virtual, para sentir o carro vibrar. Use com volume moderado.",
+    "Toxic Carro · Equilibrado" to "Som natural, com um pouco mais de grave e voz clara. Bom para o dia a dia.",
+    "Toxic Carro · Kit 2 Vias" to "Para kit 2 vias (woofer + tweeter): grave firme sem deixar o agudo agressivo.",
+    "Toxic Carro · Com Subwoofer" to "Para quando você instalar o subwoofer: corte baixo, sub-harmônico e grave em mono.",
+    "Toxic Carro · Volume Baixo" to "Contorno de loudness: mantém grave e brilho quando você ouve baixinho."
+)
+
+/** Cartão de um preset pronto: mostra claramente se ele está valendo agora. */
+@Composable
+private fun PresetCard(name: String, info: String, active: Boolean, onApply: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(16.dp))
+            .background(if (active) Neon.Green.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.05f))
+            .border(1.dp, if (active) Neon.Green else Color.White.copy(alpha = 0.10f), RoundedCornerShape(16.dp))
+            .clickable(onClick = onApply).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(if (active) "● ATIVO" else "Aplicar", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (active) Neon.Green else Neon.Dim)
+        }
+        if (info.isNotEmpty()) Text(info, fontSize = 11.sp, color = Neon.Dim)
+    }
+}
+
 // ---- Presets ----
 @Composable
 private fun PresetSection() {
@@ -1295,9 +1482,17 @@ private fun PresetSection() {
             }
         }
     }
-    Panel("PRESETS PRONTOS", "Aplicam-se ao EQ gráfico") {
+    Panel("PRESETS DE CARRO", "Prontos para alto-falante de porta; o que está valendo aparece como ATIVO") {
+        CarPresets.ALL.keys.forEach { n ->
+            PresetCard(n, CAR_PRESET_INFO[n].orEmpty(), AudioFx.isActive(n)) {
+                msg = if (AudioFx.applyCarPreset(n)) "\"$n\" aplicado e valendo agora" else "Preset não encontrado"
+            }
+        }
+        Text("Mexeu em qualquer controle depois? O selo ATIVO some e o painel passa a mostrar Personalizado.", fontSize = 11.sp, color = Neon.Dim, modifier = Modifier.padding(top = 8.dp))
+    }
+    Panel("PRESETS PRONTOS", "Aplicam-se ao EQ gráfico (zeram o resto)", startOpen = false) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            AudioFx.PRESETS.keys.forEach { n -> Chip(n) { AudioFx.applyPreset(n) } }
+            AudioFx.PRESETS.keys.forEach { n -> Chip(n, AudioFx.isActive(n)) { AudioFx.applyPreset(n); msg = "\"$n\" aplicado e valendo agora" } }
         }
         Text("Não há curvas de fones embutidas: use a importação AutoEQ para o seu modelo.", fontSize = 11.sp, color = Neon.Dim, modifier = Modifier.padding(top = 6.dp))
     }
@@ -1310,9 +1505,10 @@ private fun PresetSection() {
         if (AudioFx.customNames.isEmpty()) Text("Nenhum perfil salvo ainda.", fontSize = 12.sp, color = Neon.Dim, modifier = Modifier.padding(top = 6.dp))
         AudioFx.customNames.toList().forEach { n ->
             Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(n, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (AudioFx.isActive(n)) "$n  ● ATIVO" else n, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (AudioFx.isActive(n)) Neon.Green else Color.Unspecified)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MiniAction("Aplicar", Neon.Green) { AudioFx.loadCustom(n); msg = "\"$n\" aplicado" }
+                    MiniAction("Aplicar", Neon.Green) { AudioFx.loadCustom(n); msg = "\"$n\" aplicado e valendo agora" }
                     MiniAction("Duplicar") { AudioFx.duplicateCustom(n) }
                     MiniAction("Renomear") {
                         if (newName.isNotBlank()) { AudioFx.renameCustom(n, newName); newName = "" } else msg = "Digite o novo nome no campo acima"
