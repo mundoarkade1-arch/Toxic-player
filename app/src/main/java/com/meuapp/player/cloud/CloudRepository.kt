@@ -22,6 +22,8 @@ sealed class SyncProgress {
 
 /** Versão do esquema do índice (3 = gênero, data de adição e pasta). */
 private const val SCHEMA = 3
+/** Sobe quando for preciso reler as capas de todo o mundo uma vez (músicas lidas sem capa em versões antigas). */
+private const val COVER_SCAN = 1
 
 /** Resultado de uma sincronização. */
 data class SyncResult(val added: Int, val modified: Int, val removed: Int, val full: Boolean, val enrichError: CloudErrorKind?)
@@ -178,6 +180,7 @@ class CloudRepository(ctx: Context, private val api: DriveApi = DriveApi()) {
     /** Lê tags das músicas pendentes, poucas por vez. Devolve o tipo de erro que interrompeu o processo, se houve. */
     suspend fun enrichPending(onProgress: (SyncProgress) -> Unit, onChanged: () -> Unit): CloudErrorKind? =
         withContext(Dispatchers.IO) {
+            repairCovers()
             val pending = synchronized(lock) { map.values.filter { it.metaState == MetaState.PENDING } }
             if (pending.isEmpty()) return@withContext null
             val done = AtomicInteger(0)
@@ -220,6 +223,25 @@ class CloudRepository(ctx: Context, private val api: DriveApi = DriveApi()) {
             }
             abort
         }
+
+    /**
+     * Põe de volta na fila de leitura as músicas que deveriam ter capa e não têm:
+     *  - o índice diz que tem capa mas o arquivo da capa sumiu (cache apagado pelo Android ou pelo usuário);
+     *  - UMA vez por versão ([COVER_SCAN]): músicas lidas antes sem capa, de quando a leitura falhava em silêncio.
+     */
+    private fun repairCovers() {
+        val once = prefs.getInt("cover_scan", 0) < COVER_SCAN
+        var n = 0
+        synchronized(lock) {
+            for ((id, t) in map.entries.toList()) {
+                if (t.metaState != MetaState.DONE) continue
+                val lost = t.hasCover && !CloudStorage.coverFile(id).exists()
+                if (lost || (once && !t.hasCover)) { map[id] = t.copy(hasCover = false, metaState = MetaState.PENDING); n++ }
+            }
+        }
+        if (once) prefs.edit().putInt("cover_scan", COVER_SCAN).apply()
+        if (n > 0) persist()
+    }
 
     private fun markFailed(id: String) {
         synchronized(lock) { map[id]?.let { map[id] = it.copy(metaState = MetaState.FAILED) } }

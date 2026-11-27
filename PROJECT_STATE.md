@@ -28,6 +28,10 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 **(Texto antigo, já feito acima) Falta (telas, só com autorização):** botão "Importar playlists (.json)" ao lado do M3U (`ui/Screens.kt`, ~linha 422), botão "Sincronizar playlists do Drive" e o retorno destacado ("3 playlists atualizadas, +27 faixas, 4 não encontradas" + lista das não encontradas, que já está em `vm.smart.lastReport`). Hoje o resultado aparece na mensagem da aba Cloud.
 **Não validado:** build no Actions, leitura real do Drive, aparelho.
 
+## Reparo de capas (2026-11-26) — NÃO compilado, NÃO testado
+- Capas movidas de `cacheDir` para `filesDir/toxic_cloud/covers` (`CloudStorage.coversDir`). `CloudRepository.repairCovers()` (chamado no início de `enrichPending`) requeue: hasCover sem arquivo, e uma vez por `COVER_SCAN` as músicas DONE sem capa. `CloudManager` init chama `enrichPending` ao abrir conectado. `PlaylistCover` procura capa pelo arquivo (`CloudStorage.coverFile(id).exists()`) em IO.
+- Validar: abrir app conectado, ver "Lendo informações", capas das músicas e das playlists (mosaico de 4) aparecendo; "Limpar cache" nos Ajustes e abrir de novo traz as capas de volta.
+
 ## Busca de playlists e mosaico (2026-11-26) — NÃO compilado, NÃO testado no aparelho
 - `cloud/PlaylistSearch.kt` (puro): `score(query, nome, nomesPorMúsica, total)` -> BY_NAME / BY_CONTENT (>=40% das músicas) / NO_MATCH; compara sem acento, caixa e pontuação. Teste: `PlaylistSearchTest`.
 - `ui/PlaylistSearchResults.kt`: `rememberPlaylistMatches` e `PlaylistSearchRow`. Usados em `CloudHome` (busca do Início) e `DriveSongs` (lista de músicas, novo parâmetro `onOpenPlaylist`).

@@ -34,7 +34,9 @@ object CloudStorage {
     // ---------- diretórios ----------
     val dataDir: File get() = File(app.filesDir, "toxic_cloud").apply { mkdirs() }
     val offlineDir: File get() = File(dataDir, "offline").apply { mkdirs() }
-    private val coversDir: File get() = File(app.cacheDir, "toxic_cloud/covers").apply { mkdirs() }
+    // Capas ficam em filesDir (e não em cacheDir): o "Limpar cache" do Android e a falta de espaço apagavam todas
+    // as capas e o app achava que ainda as tinha, então nunca mais lia de novo.
+    private val coversDir: File get() = File(dataDir, "covers").apply { mkdirs() }
     private val audioCacheDir: File get() = File(app.cacheDir, "toxic_cloud/audio")
 
     // ---------- configurações ----------

@@ -146,6 +146,11 @@ class CloudManager(private val app: Application, private val scope: CoroutineSco
             refreshUsage()
             // Índice de versão antiga: uma varredura completa traz a data de adição e releitura traz o gênero.
             if (CloudAuth.connected && repo.needsMigration()) doSync(full = true)
+            else if (CloudAuth.connected) {
+                // Capas que faltam (arquivo sumiu ou nunca foi lido) voltam a ser lidas ao abrir o app.
+                repo.enrichPending({ p -> progress = p }, { publish() })
+                progress = SyncProgress.Idle
+            }
         }
     }
 
