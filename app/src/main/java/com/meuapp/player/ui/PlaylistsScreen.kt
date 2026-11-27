@@ -38,27 +38,36 @@ import kotlinx.coroutines.withContext
  * se não tem nenhuma, cria uma genérica: degradê numa cor própria de cada nome, com um símbolo (coração nas curtidas).
  */
 @Composable
-internal fun PlaylistCover(vm: PlayerViewModel, name: String, modifier: Modifier = Modifier, iconSize: androidx.compose.ui.unit.Dp = 44.dp) {
+internal fun PlaylistCover(
+    vm: PlayerViewModel, name: String, modifier: Modifier = Modifier, iconSize: androidx.compose.ui.unit.Dp = 44.dp,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(20.dp), coverPx: Int = 200
+) {
     val ids = vm.playlists[name]
     // Refaz quando a lista de músicas do player muda (as capas da nuvem chegam DEPOIS da primeira leitura) e olha a
-    // playlist inteira, não só as primeiras músicas. Prefere álbuns diferentes para o mosaico ficar variado.
+    // playlist inteira. As 4 capas do mosaico são IMAGENS DIFERENTES: duas músicas com a mesma imagem (mesmo álbum,
+    // ou playlist baixada em que todas têm o mesmo nome de álbum) contam como uma só. Tamanho do arquivo da capa
+    // serve de impressão digital (barato, sem decodificar nada). Menos de 4 imagens diferentes = uma capa só.
     val withCover = remember(ids, vm.cloud.playerTracks) {
-        vm.tracksIn("P:$name")
+        vm.tracksIn("P:$name").asSequence()
             .filter { it.cloudId == null || it.coverStamp != 0L }
-            .distinctBy { it.album.ifBlank { it.id.toString() } }
-            .take(4)
+            .distinctBy { t ->
+                val id = t.cloudId
+                if (id != null) com.meuapp.player.cloud.CloudStorage.coverFile(id).length().let { if (it > 0L) "s$it" else "t${t.id}" }
+                else t.album.ifBlank { t.id.toString() }
+            }
+            .take(4).toList()
     }
-    val c0 = rememberCover(withCover.getOrNull(0), 200).value
-    val c1 = rememberCover(withCover.getOrNull(1), 200).value
-    val c2 = rememberCover(withCover.getOrNull(2), 200).value
-    val c3 = rememberCover(withCover.getOrNull(3), 200).value
+    val c0 = rememberCover(withCover.getOrNull(0), coverPx).value
+    val c1 = rememberCover(withCover.getOrNull(1), coverPx).value
+    val c2 = rememberCover(withCover.getOrNull(2), coverPx).value
+    val c3 = rememberCover(withCover.getOrNull(3), coverPx).value
     val bitmaps = listOfNotNull(c0, c1, c2, c3)
-    val shape = RoundedCornerShape(20.dp)
     if (bitmaps.isNotEmpty()) {
-        Box(modifier.clip(shape).border(1.dp, Color.White.copy(alpha = 0.16f), shape)) {
+        Box(modifier.clip(shape).background(Color.Black.copy(alpha = 0.45f)).border(1.dp, Color.White.copy(alpha = 0.16f), shape)) {
             if (bitmaps.size >= 4) {
-                Column(Modifier.fillMaxSize()) {
-                    for (row in 0..1) Row(Modifier.weight(1f).fillMaxWidth()) {
+                // 4 capinhas dentro de uma capa grande, como no Spotify (fresta fina entre elas).
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.5.dp)) {
+                    for (row in 0..1) Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.5.dp)) {
                         for (col in 0..1) Image(
                             bitmaps[row * 2 + col].asImageBitmap(), null,
                             Modifier.weight(1f).fillMaxHeight(), contentScale = ContentScale.Crop

@@ -86,8 +86,6 @@ internal fun PlaylistDetail(vm: PlayerViewModel, name: String, goPlayer: () -> U
     val cloud = vm.cloud
     val ids = vm.playlists[name]
     val list = remember(ids, cloud.playerTracks) { vm.tracksIn("P:$name") }
-    val coverTrack = remember(list) { list.firstOrNull { it.cloudId == null || it.coverStamp != 0L } }
-    val cover by rememberCover(coverTrack, 700)
     val totalMs = remember(list) { list.sumOf { it.durationMs } }
     val artists = remember(list) { topArtistsText(list) }
     val kind = vm.playlistKind(name)
@@ -109,19 +107,8 @@ internal fun PlaylistDetail(vm: PlayerViewModel, name: String, goPlayer: () -> U
         // ---------- capa grande com o nome por cima ----------
         item {
             Box(Modifier.fillMaxWidth().height(380.dp)) {
-                val b = cover
-                if (b != null) {
-                    Image(b.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                } else {
-                    val hue = CloudHomeLogic.hueOf(name)
-                    Box(
-                        Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color.hsv(hue, 0.62f, 0.66f), Color.hsv((hue + 38f) % 360f, 0.78f, 0.22f)))),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (name == FAVORITES) Icon(Icons.Rounded.Favorite, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(96.dp))
-                        else Text(CloudHomeLogic.initials(name), fontSize = 96.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.9f))
-                    }
-                }
+                // Mesma capa das listas: mosaico de 4 capas (ou a capa única, ou o degradê com as letras), sem cantos redondos.
+                PlaylistCover(vm, name, Modifier.fillMaxSize(), 96.dp, androidx.compose.ui.graphics.RectangleShape, 600)
                 // Escurece embaixo para o nome ficar legível e a capa "derreter" no fundo do app.
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(colorStops = arrayOf(0.35f to Color.Transparent, 1f to Neon.Bg))))
                 Text(

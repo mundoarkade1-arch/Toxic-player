@@ -1,6 +1,10 @@
 # Changelog
 
 ## Não lançado
+### Corrigido (busca acha as playlists + capa de 4 músicas)
+- **Busca**: no Início e na lista de todas as músicas, a busca agora mostra as **playlists (pastas do Drive)** no topo, como linhas com capa, nome e "Playlist · N músicas", antes das músicas. Uma playlist aparece se o NOME tem o texto (sem diferenciar acento, maiúscula nem ponto: "Charlie Brown Jr." acha a pasta "Charlie Brown Jr") ou se pelo menos 40% das músicas dela são do artista/álbum buscado. Tocar abre a playlist. Antes só comparava o nome com acento e ponto exatos, e a lista de músicas nem olhava playlists. Arquivos: novo `cloud/PlaylistSearch.kt` (lógica pura, teste `PlaylistSearchTest`), novo `ui/PlaylistSearchResults.kt`, `ui/CloudHome.kt`, `ui/CloudScreen.kt`.
+- **Capa da playlist**: o mosaico agora pega 4 músicas com IMAGEM diferente (antes agrupava por nome do álbum, e playlist baixada com o mesmo álbum em tudo ficava com 1 capa só). As 4 capinhas ficam dentro da capa grande com uma fresta fina, como no Spotify; menos de 4 imagens diferentes = uma capa só; nenhuma = degradê com as letras. A capa grande da tela da playlist usa o mesmo mosaico. Arquivos: `ui/PlaylistsScreen.kt`, `ui/PlaylistDetail.kt`.
+- Código escrito; NÃO compilado e NÃO testado no aparelho (sem Gradle neste ambiente). Validar no Actions e no celular.
 ### Adicionado/Corrigido (equalizador e processador de áudio de carro)
 - Os recursos de carro (corte de graves e agudos, grave virtual, sub-harmônico, limitador de graves, contorno, foco na voz, ar, graves em mono, atraso/ganho/polaridade) agora estão LIGADOS ao motor, ao salvamento (JSON) e à tela (nova aba **Carro** na Mesa de áudio). Antes o código existia, mas nada o usava.
 - Medidor **entrada x saída** (graves/médios/agudos em dB) e cartão de estado no topo da Mesa: mostra se os efeitos estão ligados, qual preset vale (**● ATIVO**), se o motor está processando o áudio e o formato; botão para comparar com/sem efeitos.

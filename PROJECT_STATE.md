@@ -28,6 +28,12 @@ Login real, Range no Drive, streaming em segundo plano/Bluetooth/tela de bloquei
 **(Texto antigo, já feito acima) Falta (telas, só com autorização):** botão "Importar playlists (.json)" ao lado do M3U (`ui/Screens.kt`, ~linha 422), botão "Sincronizar playlists do Drive" e o retorno destacado ("3 playlists atualizadas, +27 faixas, 4 não encontradas" + lista das não encontradas, que já está em `vm.smart.lastReport`). Hoje o resultado aparece na mensagem da aba Cloud.
 **Não validado:** build no Actions, leitura real do Drive, aparelho.
 
+## Busca de playlists e mosaico (2026-11-26) — NÃO compilado, NÃO testado no aparelho
+- `cloud/PlaylistSearch.kt` (puro): `score(query, nome, nomesPorMúsica, total)` -> BY_NAME / BY_CONTENT (>=40% das músicas) / NO_MATCH; compara sem acento, caixa e pontuação. Teste: `PlaylistSearchTest`.
+- `ui/PlaylistSearchResults.kt`: `rememberPlaylistMatches` e `PlaylistSearchRow`. Usados em `CloudHome` (busca do Início) e `DriveSongs` (lista de músicas, novo parâmetro `onOpenPlaylist`).
+- `PlaylistCover`: 4 imagens diferentes (fingerprint = tamanho do arquivo da capa na nuvem; álbum no local), fresta de 1,5dp, parâmetros `shape` e `coverPx`. `PlaylistDetail` usa o mesmo componente na capa grande.
+- Para validar: buscar "Charlie Brown Jr" mostra a playlist/pasta no topo; playlists com 4+ capas mostram mosaico; playlist sem nenhuma capa embutida continua com o degradê.
+
 ## Capa de playlist (2026-11-22) — NÃO compilado, NÃO testado
 - `PlaylistCover` (`ui/PlaylistsScreen.kt`): `remember` agora depende de `vm.cloud.playerTracks`; olha todas as músicas; `distinctBy` álbum; até 4 capas (mosaico se 4, senão a primeira). Sem nenhuma capa: degradê com letras.
 

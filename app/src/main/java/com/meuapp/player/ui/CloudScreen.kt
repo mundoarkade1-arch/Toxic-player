@@ -138,9 +138,9 @@ private fun DriveHub(vm: PlayerViewModel, goPlayer: () -> Unit, onDevice: () -> 
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                SearchField(cloud.query, cloud::changeQuery, "Buscar música, artista ou álbum")
+                SearchField(cloud.query, cloud::changeQuery, "Buscar música, artista, álbum ou playlist")
                 Spacer(Modifier.height(10.dp))
-                DriveSongs(vm, cloud, goPlayer)
+                DriveSongs(vm, cloud, goPlayer, onOpenPlaylist = { openPlaylist = it })
             }
             else -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -187,7 +187,7 @@ internal fun MessageCard(text: String, onClose: () -> Unit) {
 
 /** Biblioteca > Músicas: todas as músicas (ou pastas, artistas, álbuns e gêneros, pelo botão de filtros). A busca fica no topo da Biblioteca. */
 @Composable
-internal fun DriveSongs(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit) {
+internal fun DriveSongs(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -> Unit, onOpenPlaylist: (String) -> Unit = {}) {
     var confirmDownload by remember { mutableStateOf<List<CloudTrack>?>(null) }
     val open = cloud.openGroup
 
@@ -203,6 +203,8 @@ internal fun DriveSongs(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -
         )
     }
     val searching = cloud.query.isNotBlank()
+    // Playlists (pastas) que combinam com a busca aparecem no topo, antes das músicas.
+    val matchLists = rememberPlaylistMatches(vm, if (open == null) cloud.query else "")
     val showGroups = open == null && !searching && (cloud.viewMode in 1..3 || cloud.viewMode == 5)
     val groups = remember(base, cloud.viewMode, cloud.formatFilter, offOnly, cloud.offlineIds, cloud.folderPaths) {
         val pool = CloudLibrary.filter(base, "", cloud.formatFilter, offOnly, cloud.offlineIds, null, cloud.folderPaths)
@@ -221,6 +223,11 @@ internal fun DriveSongs(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -
                     }
                 }
             }
+        }
+        if (searching && matchLists.isNotEmpty()) {
+            item { Text("Playlists · ${matchLists.size}", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp)) }
+            items(matchLists, key = { "pl:" + it.path }) { g -> PlaylistSearchRow(vm, g, onOpenPlaylist) }
+            if (filtered.isNotEmpty()) item { Text("Músicas · ${filtered.size}", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp)) }
         }
         if (!showGroups && filtered.isNotEmpty()) {
             item {
@@ -242,7 +249,7 @@ internal fun DriveSongs(vm: PlayerViewModel, cloud: CloudManager, goPlayer: () -
                 GroupCard(g.name, g.count, when (cloud.viewMode) { 1 -> Icons.Rounded.Person; 2 -> Icons.Rounded.Album; 5 -> Icons.Rounded.Folder; else -> Icons.Rounded.LibraryMusic }) { cloud.enterGroup(g.key) }
             }
         } else if (filtered.isEmpty()) {
-            item {
+            if (matchLists.isEmpty()) item {
                 EmptyState(
                     if (!cloud.online) Icons.Rounded.CloudOff else Icons.Rounded.Search,
                     if (!cloud.online) "Sem internet e nenhuma música baixada ainda. Baixe músicas pelo menu (três pontinhos) para ouvir offline."

@@ -110,6 +110,8 @@ fun CloudHome(
 
     val myLists = vm.groups(3).filter { it.count > 0 }
         .sortedWith(compareBy<Folder>({ vm.playlistKind(it.name) }, { it.name.lowercase() }))
+    // Busca: playlists (pastas do Drive) pelo nome ou pelo artista das músicas.
+    val matchLists = rememberPlaylistMatches(vm, query)
     LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
         item {
             Column {
@@ -121,10 +123,9 @@ fun CloudHome(
         if (cloud.syncing || cloud.progress !is SyncProgress.Idle) item { SyncBanner(cloud) }
         cloud.message?.let { m -> item { MessageCard(m) { cloud.dismissMessage() } } }
         if (searching) {
-            val matchLists = myLists.filter { it.name.contains(query.trim(), ignoreCase = true) }
             if (matchLists.isNotEmpty()) {
-                item { Section("Playlists") }
-                item { PlaylistRow(vm, matchLists, onOpenPlaylist) }
+                item { Section("Playlists · ${matchLists.size}") }
+                items(matchLists, key = { "pl:" + it.path }) { g -> PlaylistSearchRow(vm, g, onOpenPlaylist) }
             }
             if (found.isEmpty() && matchLists.isEmpty()) {
                 item { EmptyState(Icons.Rounded.Search, "Nada encontrado para \"${query.trim()}\".") }
