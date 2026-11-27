@@ -47,15 +47,21 @@ internal fun PlaylistCover(
     // playlist inteira. As 4 capas do mosaico são IMAGENS DIFERENTES: duas músicas com a mesma imagem (mesmo álbum,
     // ou playlist baixada em que todas têm o mesmo nome de álbum) contam como uma só. Tamanho do arquivo da capa
     // serve de impressão digital (barato, sem decodificar nada). Menos de 4 imagens diferentes = uma capa só.
-    val withCover = remember(ids, vm.cloud.playerTracks) {
-        vm.tracksIn("P:$name").asSequence()
-            .filter { it.cloudId == null || it.coverStamp != 0L }
-            .distinctBy { t ->
-                val id = t.cloudId
-                if (id != null) com.meuapp.player.cloud.CloudStorage.coverFile(id).length().let { if (it > 0L) "s$it" else "t${t.id}" }
-                else t.album.ifBlank { t.id.toString() }
-            }
-            .take(4).toList()
+    val listTracks = remember(ids, vm.cloud.playerTracks) { vm.tracksIn("P:$name") }
+    // Procura as capas no ARQUIVO da capa (o mesmo que a linha da música usa para mostrar a imagem), e não no
+    // marcador "hasCover" do índice, que podia ficar desatualizado e deixar a playlist sem capa mesmo com a música
+    // mostrando a dela. Roda fora da tela principal porque olha muitos arquivos.
+    val withCover by produceState(emptyList<com.meuapp.player.Track>(), listTracks) {
+        value = withContext(Dispatchers.IO) {
+            listTracks.asSequence()
+                .filter { t -> val id = t.cloudId; id == null || com.meuapp.player.cloud.CloudStorage.coverFile(id).exists() }
+                .distinctBy { t ->
+                    val id = t.cloudId
+                    if (id != null) com.meuapp.player.cloud.CloudStorage.coverFile(id).length().let { if (it > 0L) "s$it" else "t${t.id}" }
+                    else t.album.ifBlank { t.id.toString() }
+                }
+                .take(4).toList()
+        }
     }
     val c0 = rememberCover(withCover.getOrNull(0), coverPx).value
     val c1 = rememberCover(withCover.getOrNull(1), coverPx).value
